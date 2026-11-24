@@ -12,8 +12,8 @@ const g = canvas.getContext('2d');
 const $ = (id) => document.getElementById(id);
 
 const CRATE_FLY = 0.22;
-const PHOTO_SIZES = { s: 24, m: 36, l: 52 };
-const PHOTO_COLORS = { s: 6, m: 7, l: 8 };
+const PHOTO_SIZES = { s: 24, m: 36, l: 52, xl: 80 };
+const PHOTO_COLORS = { s: 6, m: 7, l: 8, xl: 10 };
 
 let W = 0, H = 0, DPR = 1;
 let L = null;                // layout
@@ -37,7 +37,7 @@ const cleared = new Set(load('cleared', []));
 
 function levelFromHash() {
   const h = location.hash;
-  let m = h.match(/photo=(\d+)(?:&size=([sml]))?/);
+  let m = h.match(/photo=(\d+)(?:&size=(s|m|l|xl))?/);
   if (m) return { photo: +m[1], size: m[2] || 'm' };
   m = h.match(/seed=(\d+)/);
   if (m) return { seed: +m[1] };
@@ -102,7 +102,7 @@ function begin(which, pic, name, palette) {
     critters: [],
     bites: [],
     bits: [],
-    perCrate: Math.max(2, Math.min(7, Math.round(total / 160) + 2)),
+    perCrate: Math.max(2, Math.min(10, Math.round(total / 160) + 2)),
     combo: 0, comboT: 0, bestCombo: 0,
     squeezed: false, stuck: false, stuckCheck: 0,
     paused: false, won: false, winT: 0,
