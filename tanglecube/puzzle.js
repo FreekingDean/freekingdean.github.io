@@ -109,23 +109,53 @@ export function generate(level) {
   const occupied = new Map(); // cellKey -> arrow index
   const arrows = [];
   const total = board.cells.size;
-  const allCells = [...board.cells.values()];
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
-  let failures = 0;
+
+  // Cells that could still become a head. Occupying cells only ever removes
+  // options, so once a cell can't host a head it never will again and is
+  // dropped from the pool. Keeps generation fast on 100-wide cubes.
+  const pool = [...board.cells.values()];
+  const poolIndex = new Map(pool.map((c, i) => [c.key, i]));
+  const dropFromPool = (key) => {
+    const i = poolIndex.get(key);
+    if (i === undefined) return;
+    const last = pool.pop();
+    if (i < pool.length) { pool[i] = last; poolIndex.set(last.key, i); }
+    poolIndex.delete(key);
+  };
 
   // Cells that lie in front of an existing arrow's head. Laying a new arrow
   // over them makes that arrow wait for it, which is where difficulty comes from.
-  const blocking = new Map(); // cellKey -> Set of arrow indices
+  const blocking = new Map(); // cellKey -> array of arrow indices
+
+  // Heads deep inside a face go first, so the runs of later, outer arrows
+  // are still clear when they are placed. Sampling a few cells and keeping
+  // the deepest gives that order loosely, with plenty of randomness.
+  const depth = (c) => {
+    let m = Infinity;
+    for (let i = 0; i < 3; i++) if (i !== c.n >> 1) m = Math.min(m, c.v[i], board.size[i] - 1 - c.v[i]);
+    return m;
+  };
+  const samples = level.samples || 4;
+  function pickHead() {
+    let best = pick(pool), bd = depth(best);
+    for (let i = 1; i < samples; i++) {
+      const c = pick(pool), cd = depth(c);
+      if (cd > bd) { best = c; bd = cd; }
+    }
+    return best;
+  }
 
   function candidate() {
-    const free = allCells.filter((c) => !occupied.has(c.key));
-    const head = pick(free);
+    const head = pickHead();
 
     // Choose a head direction whose run is clear right now.
-    let options = board.tangents(head)
-      .map((d) => ({ d, ray: board.ray(head, d) }))
-      .filter((o) => o.ray.every((k) => !occupied.has(k)));
-    if (!options.length) return null;
+    let options = [];
+    for (const d of board.tangents(head)) {
+      const ray = board.ray(head, d);
+      if (ray.every((k) => !occupied.has(k))) options.push({ d, ray });
+    }
+    if (!options.length) { dropFromPool(head.key); return null; }
     if (rng() < level.twist) {
       const longest = Math.max(...options.map((o) => o.ray.length));
       options = options.filter((o) => o.ray.length === longest);
@@ -140,9 +170,11 @@ export function generate(level) {
     const used = new Set([head.key]);
     let cur = head, curBack = back;
     while (body.length < target) {
-      const choices = board.tangents(cur)
-        .map((t) => ({ t, s: board.step(cur, t) }))
-        .filter(({ s }) => s.cell && !occupied.has(s.cell.key) && !used.has(s.cell.key) && !rayKeys.has(s.cell.key));
+      const choices = [];
+      for (const t of board.tangents(cur)) {
+        const s = board.step(cur, t);
+        if (s.cell && !occupied.has(s.cell.key) && !used.has(s.cell.key) && !rayKeys.has(s.cell.key)) choices.push({ t, s });
+      }
       // The first step must continue straight back so the head points along its face.
       const allowed = body.length === 1 ? choices.filter((c) => c.t === back) : choices;
       if (!allowed.length) break;
@@ -162,18 +194,20 @@ export function generate(level) {
   }
 
   const tries = 1 + Math.round(level.twist * 10);
-  while (occupied.size < total * level.fill && failures < 600) {
+  let misses = 0;
+  while (pool.length && occupied.size < total * level.fill && misses < 200) {
     let best = null;
-    for (let i = 0; i < tries; i++) {
+    for (let i = 0; i < tries && pool.length; i++) {
       const c = candidate();
       if (c && (!best || c.score > best.score)) best = c;
     }
-    if (!best) { failures++; continue; }
+    if (!best) { misses++; continue; }
+    misses = 0;
     const index = arrows.length;
-    for (const c of best.cells) occupied.set(c.key, index);
+    for (const c of best.cells) { occupied.set(c.key, index); dropFromPool(c.key); }
     for (const k of best.ray) {
-      if (!blocking.has(k)) blocking.set(k, new Set());
-      blocking.get(k).add(index);
+      if (!blocking.has(k)) blocking.set(k, []);
+      blocking.get(k).push(index);
     }
     arrows.push({ cells: best.cells, dir: headDir(board, best.cells) });
   }
