@@ -6,7 +6,7 @@ A suite of small web pages, built for fun. Live at https://freekingdean.github.i
 
 - `index.html` + `style.css`: the landing page that links to every mini-site.
 - `<name>/index.html`: one folder per mini-site, served at `/<name>/`.
-- `games/`: a category page (`games/index.html`) with one folder per game, e.g. `games/tanglecube/`.
+- `games/`: a category page (`games/index.html`) with one folder per game, e.g. `games/tanglecube/`, `games/nibblecrate/`.
 
 Plain static HTML/CSS/JS, no build step. Keep links relative (`hello/`, `../style.css`) so PR previews work.
 
