@@ -185,7 +185,7 @@ export function generate(level) {
       cur = choice.s.cell;
       curBack = choice.s.dir;
     }
-    if (body.length < 2) return null;
+    if (body.length < Math.max(2, level.strictMin ? level.minLen : 2)) return null;
 
     const blocks = new Set();
     for (const c of body) for (const i of blocking.get(c.key) || []) blocks.add(i);

@@ -29,16 +29,23 @@ const LEVELS = [
   bigLevel('Hundred', 100, 100100, 'Colossal'),
 ];
 
-// Settings for an n x n x n cube. Arrows get longer as the cube grows, and
-// you get more hearts since there are so many more arrows to get wrong.
+// Settings for an n x n x n cube. Arrows get longer as the cube grows so big
+// cubes aren't a slog of tiny ones: the shortest arrow is half the cube's
+// width at 25, a third at 50 and a quarter at 100, i.e. n / (1 + log2(n / 12.5)),
+// and never more than half. You also get more hearts on big cubes.
+function minLength(n) {
+  return Math.max(3, Math.round(n * Math.min(0.5, 1 / (1 + Math.log2(n / 12.5)))));
+}
+
 function bigLevel(name, n, seed, tag) {
-  const maxLen = Math.min(50, Math.max(8, Math.round(n * 0.5)));
+  const minLen = minLength(n);
   return {
     name, seed, tag,
     size: [n, n, n],
     fill: 0.92,
-    minLen: Math.max(3, Math.round(maxLen / 4)),
-    maxLen,
+    minLen,
+    maxLen: Math.max(minLen + 4, Math.round(minLen * 2)),
+    strictMin: true,
     twist: 0.8,
     straight: 0.45,
     samples: Math.min(24, 4 + Math.floor(n / 6)),
@@ -651,7 +658,7 @@ function renderLevelGrid() {
 
 function customLevel(n) {
   const level = bigLevel(`${n}×${n}×${n}`, n, Math.floor(Math.random() * 1e9));
-  if (n < 10) Object.assign(level, { minLen: 2, maxLen: Math.max(4, n + 2), lives: 3 });
+  if (n < 10) Object.assign(level, { minLen: 2, maxLen: Math.max(4, n + 2), strictMin: false, lives: 3 });
   return level;
 }
 
