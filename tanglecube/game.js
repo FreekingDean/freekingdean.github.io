@@ -320,6 +320,8 @@ const store = {
 };
 
 let state = null;
+// Hearts are off unless turned on in the Levels screen: bonks are free.
+const settings = { hearts: store.get('hearts', false) };
 const solved = new Set(store.get('solved', []));
 let cubeMesh = null;
 
@@ -425,6 +427,7 @@ function updateHud() {
   const tag = state.level.tag ? ` · ${state.level.tag}` : '';
   ui.levelName.textContent = state.index >= 0 ? `${state.index + 1}. ${state.level.name}` : state.level.name;
   ui.remaining.textContent = `${state.left} arrow${state.left === 1 ? '' : 's'} left${tag}`;
+  ui.hearts.style.visibility = settings.hearts ? 'visible' : 'hidden';
   ui.hearts.innerHTML = state.maxLives <= 3
     ? Array.from({ length: state.maxLives }, (_, i) => `<span class="${i < state.lives ? '' : 'lost'}">♥</span>`).join('')
     : `♥ ${state.lives}/${state.maxLives}`;
@@ -490,7 +493,7 @@ function tapArrow(arrow) {
   // Blocked: creep up to the arrow in the way, bonk, and slide back.
   arrow.busy = true;
   state.bonks++;
-  state.lives--;
+  if (settings.hearts) state.lives--;
   updateHud();
   try { navigator.vibrate && navigator.vibrate(40); } catch { /* ignore */ }
   setVisible(arrow, false);
@@ -507,13 +510,13 @@ function tapArrow(arrow) {
       setVisible(arrow, true);
       arrow.busy = false;
       if (!block.other.gone) setColor(block.other, INK);
-      if (state.lives <= 0) {
+      if (settings.hearts && state.lives <= 0) {
         state.over = true;
         ui.lose.classList.add('show');
       }
     });
   });
-  if (state.lives > 0) toast('Bonk! Something is in the way.');
+  if (!settings.hearts || state.lives > 0) toast('Bonk! Something is in the way.');
 }
 
 function checkWin() {
@@ -671,6 +674,14 @@ $('btnCustom').addEventListener('click', () => {
   store.set('customSize', n);
   ui.levels.classList.remove('show');
   loadLevel(-1, customLevel(n));
+});
+
+const heartsToggle = $('heartsToggle');
+heartsToggle.checked = settings.hearts;
+heartsToggle.addEventListener('change', () => {
+  settings.hearts = heartsToggle.checked;
+  store.set('hearts', settings.hearts);
+  if (state) { state.lives = state.maxLives; updateHud(); }
 });
 
 $('btnLevels').addEventListener('click', () => { renderLevelGrid(); ui.levels.classList.add('show'); });
