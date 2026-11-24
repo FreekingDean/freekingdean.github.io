@@ -394,8 +394,8 @@ export function makeCrates(grid, seed) {
   for (const k in byColor) { total += byColor[k].length; for (const d of byColor[k]) maxDepth = Math.max(maxDepth, d); }
   // How far out of order a crate may come. More shuffle = more planning.
   const jitter = 1.2 + maxDepth * JITTER;
-  const lo = total < 110 ? 5 : total < 450 ? 8 : 20;
-  const hi = total < 110 ? 12 : total < 450 ? 24 : 50;
+  const lo = total < 110 ? 5 : total < 450 ? 8 : total < 3000 ? 20 : 40;
+  const hi = total < 110 ? 12 : total < 450 ? 24 : total < 3000 ? 50 : 90;
 
   const crates = [];
   for (const color of Object.keys(byColor)) {
