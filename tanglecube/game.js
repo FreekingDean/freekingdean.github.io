@@ -343,6 +343,7 @@ function loadLevel(index, custom, saved) {
 }
 
 function build(index, level, saved) {
+  setLink(index, level);
   tweens.clear();
   world.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
   world.clear();
@@ -862,8 +863,8 @@ function renderLevelGrid() {
   });
 }
 
-function customLevel(n) {
-  const level = bigLevel(`${n}×${n}×${n}`, n, Math.floor(Math.random() * 1e9));
+function customLevel(n, seed = Math.floor(Math.random() * 1e9)) {
+  const level = bigLevel(`${n}×${n}×${n}`, n, seed);
   if (n < 10) Object.assign(level, { minLen: 2, maxLen: Math.max(4, n + 2), strictMin: false, lives: 3 });
   return level;
 }
@@ -950,8 +951,71 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// ---------------------------------------------------------------------------
+// Links. The address always describes the cube being played, so it can be
+// shared or bookmarked:
+//   #size=100            a fresh random 100×100×100 cube
+//   #size=100&seed=42    one particular cube, the same for everyone
+//   #level=12            one of the built-in levels (counting from 1)
+// ---------------------------------------------------------------------------
+function linkFor(index, level) {
+  return index >= 0 ? `#level=${index + 1}` : `#size=${level.size[0]}&seed=${level.seed}`;
+}
+
+function setLink(index, level) {
+  try { history.replaceState(null, '', linkFor(index, level)); } catch { /* ignore */ }
+}
+
+// The setup a link asks for, or null if it names none.
+function fromLink() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (q.has('level')) {
+    const i = Math.round(Number(q.get('level'))) - 1;
+    return i >= 0 && i < LEVELS.length ? { index: i } : null;
+  }
+  if (q.has('size')) {
+    const n = Math.round(Number(q.get('size')));
+    if (!(n >= 3 && n <= 100)) return null;
+    const seed = q.has('seed') ? Math.floor(Number(q.get('seed'))) : NaN;
+    return { index: -1, n, seed: Number.isFinite(seed) ? seed : undefined };
+  }
+  return null;
+}
+
+// Open a link. If it names the cube already in progress (a refresh, say),
+// carry on with it rather than starting over.
+function openLink(link, saved) {
+  if (link.index >= 0) {
+    loadLevel(link.index, undefined, saved && !saved.custom && saved.index === link.index ? saved : undefined);
+    return;
+  }
+  const same = saved && saved.custom && saved.custom.size[0] === link.n && saved.custom.seed === link.seed;
+  if (same) loadLevel(-1, saved.custom, saved);
+  else loadLevel(-1, customLevel(link.n, link.seed));
+}
+
+window.addEventListener('hashchange', () => {
+  const link = fromLink();
+  if (!link || (state && location.hash === linkFor(state.index, state.level))) return;
+  ui.levels.classList.remove('show');
+  openLink(link, null);
+});
+
+$('btnShare').addEventListener('click', async () => {
+  const url = location.href;
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Tanglecube', url });
+    else { await navigator.clipboard.writeText(url); toast('Link copied. Anyone who opens it gets this same cube.'); }
+  } catch (e) {
+    if (e && e.name !== 'AbortError') toast(url);
+  }
+});
+
 const saved = store.get('progress', null);
-if (saved && (saved.custom ? Array.isArray(saved.custom.size) : LEVELS[saved.index])) {
+const link = fromLink();
+if (link) {
+  openLink(link, saved);
+} else if (saved && (saved.custom ? Array.isArray(saved.custom.size) : LEVELS[saved.index])) {
   loadLevel(saved.custom ? -1 : saved.index, saved.custom || undefined, saved);
 } else {
   loadLevel(store.get('current', 0));
