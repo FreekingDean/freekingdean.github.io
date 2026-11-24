@@ -1,0 +1,48 @@
+# Publishes the site to the gh-pages branch.
+#   - Push to main      -> deploys the whole site to the root of gh-pages.
+#   - Pull request      -> deploys a preview to gh-pages/pr-preview/pr-<N>/
+#                          and comments the preview link on the PR.
+#   - PR closed/merged  -> removes that preview.
+#
+# One-time setup: Settings -> Pages -> Source: "Deploy from a branch",
+# Branch: gh-pages, folder: / (root).
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  deploy:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: .
+          # Keep PR previews when the main site is redeployed.
+          clean-exclude: pr-preview/
+          force: false
+
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: .
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
