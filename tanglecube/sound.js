@@ -33,39 +33,10 @@ const SONGS = {
             D4 F#4 A4 G4 F#4 D4 F#4 E4 D4 B3 D4 A4 G4 B4 A4 G4
             F#5- E5- D5- C#5- B4- A4- B4- C#5- D5---`,
   },
-  mountain: {
-    name: 'In the Hall of the Mountain King (Grieg)',
-    notes: `A4 B4 C5 D5 E5 C5 E5- D#5 B4 D#5- D5 Bb4 D5- A4 B4 C5 D5 E5 C5 E5 A5 G5 E5 C5 E5 G5--
-            A4 B4 C5 D5 E5 C5 E5- D#5 B4 D#5- D5 Bb4 D5- A4 B4 C5 D5 E5 C5 E5 A5 G5 E5 C5 E5 A5--`,
-  },
-  ode: {
-    name: 'Ode to Joy (Beethoven)',
-    notes: `E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 E5- D5 D5--
-            E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5- C5 C5--
-            D5 D5 E5 C5 D5 E5 F5 E5 C5 D5 E5 F5 E5 D5 C5 D5 G4-
-            E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5- C5 C5--`,
-  },
-  korobeiniki: {
-    name: 'Korobeiniki (Russian folk song)',
-    notes: `E5 B4 C5 D5 C5 B4 A4 A4 C5 E5 D5 C5 B4 C5 D5 E5 C5 A4 A4-
-            D5 F5 A5 G5 F5 E5 C5 E5 D5 C5 B4 B4 C5 D5 E5 C5 A4 A4--`,
-  },
-  elise: {
-    name: 'Für Elise (Beethoven)',
-    notes: `E5 D#5 E5 D#5 E5 B4 D5 C5 A4- C4 E4 A4 B4- E4 G#4 B4 C5-
-            E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4- C4 E4 A4 B4- E4 C5 B4 A4--`,
-  },
-  nachtmusik: {
-    name: 'Eine kleine Nachtmusik (Mozart)',
-    notes: `G5- D5 G5- D5 G5 D5 G5 B5 D6-- C6- A5 C6- A5 C6 A5 F#5 A5 D5--`,
-  },
-  twinkle: {
-    name: 'Twinkle, Twinkle, Little Star',
-    notes: `C5 C5 G5 G5 A5 A5 G5- F5 F5 E5 E5 D5 D5 C5- G5 G5 F5 F5 E5 E5 D5- G5 G5 F5 F5 E5 E5 D5-
-            C5 C5 G5 G5 A5 A5 G5- F5 F5 E5 E5 D5 D5 C5--`,
-  },
 };
-const PLAYLIST = ['canon', 'mountain', 'ode', 'korobeiniki', 'elise', 'nachtmusik', 'twinkle'];
+// Only full-length pieces (100+ notes) are kept, so the tune doesn't loop
+// every few seconds on a big cube.
+const PLAYLIST = Object.keys(SONGS);
 
 const ROOT = 523.25; // C5
 const note = (semitones) => ROOT * Math.pow(2, semitones / 12);
@@ -83,7 +54,7 @@ function parse(text) {
 for (const song of Object.values(SONGS)) song.parsed = parse(song.notes);
 
 export const songs = [
-  { id: 'all', name: 'All of them, one after another' },
+  ...(PLAYLIST.length > 1 ? [{ id: 'all', name: 'All of them, one after another' }] : []),
   ...PLAYLIST.map((id) => ({ id, name: SONGS[id].name })),
 ];
 
