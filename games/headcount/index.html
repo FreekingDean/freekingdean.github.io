@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Headcount</title>
+  <meta name="description" content="An auto-runner: steer your crowd through math gates, shoot the bad ones into good ones, and outnumber whatever's waiting at the end.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏃</text></svg>">
+  <style>
+    :root {
+      --fg: #1f1d1a;
+      --muted: #6b645a;
+      --panel: rgb(255 255 255 / 0.86);
+      --border: #e8dfd0;
+      --accent: #e4572e;
+      --good: #2f7cf6;
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: #f1ede6;
+        --muted: #a39d93;
+        --panel: rgb(33 31 38 / 0.88);
+        --border: #34313b;
+        --accent: #ff7a50;
+        --good: #5c9bff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: #8fd3ff;
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+    .bar {
+      position: fixed; left: 0; right: 0; top: 0;
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top));
+      pointer-events: none;
+    }
+    .bar > * { pointer-events: auto; }
+    .pill, button {
+      font: inherit; color: inherit;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.95rem;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    button { cursor: pointer; }
+    button:active { transform: scale(0.96); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; padding: 12px 22px; font-size: 1.05rem; }
+    .progress {
+      flex: 1; min-width: 60px; height: 34px; padding: 0 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .progress strong { font-size: 0.9rem; }
+    .track { flex: 1; height: 8px; border-radius: 4px; background: rgb(127 127 127 / 0.25); overflow: hidden; }
+    .track i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 4px; }
+    #btnSound { width: 40px; height: 34px; padding: 0; }
+
+    .overlay {
+      position: fixed; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      padding: 16px;
+      background: rgb(0 0 0 / 0.3);
+      overflow-y: auto;
+    }
+    .overlay.show { display: flex; }
+    .dialog {
+      margin: auto;
+      width: 100%; max-width: 360px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      text-align: center;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      animation: pop 0.35s cubic-bezier(.2,1.6,.4,1);
+    }
+    @keyframes pop { from { transform: scale(0.8); opacity: 0; } }
+    .dialog h2 { margin: 0 0 6px; font-size: 1.8rem; letter-spacing: -0.02em; }
+    .dialog p { margin: 0 0 16px; color: var(--muted); }
+    .dialog .big { font-size: 3rem; font-weight: 800; color: var(--accent); margin: 4px 0 2px; line-height: 1; }
+    .dialog .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .help { font-size: 0.88rem; color: var(--muted); text-align: left; margin: 0 0 18px; padding-left: 18px; }
+    .help li { margin-bottom: 5px; }
+    .stats { font-size: 0.85rem; color: var(--muted); margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div class="bar">
+    <a class="pill" href="../">← Games</a>
+    <div class="pill progress"><strong id="levelName">Level 1</strong><div class="track"><i id="progressFill"></i></div></div>
+    <button id="btnSound" aria-label="Turn sound off">🔊</button>
+  </div>
+
+  <div class="overlay show" id="startOverlay">
+    <div class="dialog">
+      <h2>Headcount</h2>
+      <p>Your crowd runs on its own. You just steer.</p>
+      <ul class="help">
+        <li>Drag left and right (or use the arrow keys) to pick a gate. <b>+</b> and <b>×</b> grow the crowd, <b>−</b> and <b>÷</b> shrink it.</li>
+        <li>Everyone shoots. Shoot a red gate and its number climbs. Shoot crates to crack them open for power-ups.</li>
+        <li>Red crowds fight yours one for one. Dodge the saws.</li>
+        <li>At the end, a big grump. Slide out from under its stomps.</li>
+      </ul>
+      <div class="row"><button class="primary" id="btnStart">Run!</button></div>
+      <p class="stats" id="stats"></p>
+    </div>
+  </div>
+
+  <div class="overlay" id="winOverlay">
+    <div class="dialog">
+      <h2 id="winTitle">Level clear!</h2>
+      <div class="big" id="winCount">0</div>
+      <p id="winText">made it to the end.</p>
+      <div class="row">
+        <button id="btnReplay">Replay</button>
+        <button class="primary" id="btnNext">Next level</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="loseOverlay">
+    <div class="dialog">
+      <h2>Headcount: 0</h2>
+      <p id="loseText">Everybody's gone.</p>
+      <div class="row"><button class="primary" id="btnRetry">Try again</button></div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
