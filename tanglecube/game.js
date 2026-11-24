@@ -372,6 +372,7 @@ function build(index, level, saved) {
   view.half = level.size.map((s) => s / 2);
   fitCamera();
   if (saved) restore(saved);
+  state.faceCount = countFaces(list.filter((a) => !a.gone));
   if (index >= 0) store.set('current', index);
   saveProgress();
   ui.win.classList.remove('show');
@@ -512,6 +513,74 @@ function clearHint() {
   state.hint = null;
 }
 
+// ---------------------------------------------------------------------------
+// Sides: when the last arrow leaves a face, that face gets a gold shine.
+// ---------------------------------------------------------------------------
+function countFaces(arrows) {
+  const counts = [0, 0, 0, 0, 0, 0];
+  for (const a of arrows) for (const c of a.cells) counts[c.n]++;
+  return counts;
+}
+
+// Remove an arrow's cells from the per-face counts; returns faces now empty.
+function takeFromFaces(counts, arrow) {
+  const emptied = [];
+  for (const c of arrow.cells) {
+    if (--counts[c.n] === 0) emptied.push(c.n);
+  }
+  return emptied;
+}
+
+const shineTexture = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 256, 256, 0);
+  grad.addColorStop(0, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.38, 'rgba(255,255,255,0)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.62, 'rgba(255,255,255,0)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+
+function flashFace(n) {
+  const size = state.level.size;
+  const axis = n >> 1;
+  const dims = axis === 0 ? [size[2], size[1]] : axis === 1 ? [size[0], size[2]] : [size[0], size[1]];
+  const geometry = new THREE.PlaneGeometry(dims[0], dims[1]);
+  const gold = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    color: 0xffc23d, transparent: true, opacity: 0, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+  }));
+  const map = shineTexture.clone();
+  map.needsUpdate = true;
+  const shine = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    map, transparent: true, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5,
+  }));
+  const group = new THREE.Group();
+  group.add(gold, shine);
+  group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), NORMALS[n]);
+  group.position.set((size[0] - 1) / 2, (size[1] - 1) / 2, (size[2] - 1) / 2)
+    .addScaledVector(NORMALS[n], size[axis] / 2 + 0.02);
+  world.add(group);
+  tween(1400, (t) => {
+    gold.material.opacity = 0.65 * Math.sin(Math.PI * Math.min(1, t * 1.3));
+    map.offset.set(1.2 - 2.4 * t, 0);
+  }, () => {
+    world.remove(group);
+    geometry.dispose();
+    gold.material.dispose();
+    shine.material.dispose();
+    map.dispose();
+  });
+}
+
 // Animate an arrow slithering off its face and away.
 function flyAway(arrow, done) {
   setVisible(arrow, false);
@@ -542,6 +611,11 @@ function tapArrow(arrow) {
     updateHud();
     state.order.push(arrow.id);
     state.notes.push(sfx.slide());
+    const cleared = takeFromFaces(state.faceCount, arrow);
+    if (cleared.length) {
+      cleared.forEach(flashFace);
+      if (state.left) { toast(cleared.length > 1 ? 'Two sides clear! ✨' : 'Side clear! ✨'); sfx.phrase(); }
+    }
     if (state.left) saveProgress();
     flyAway(arrow, () => { state.flying--; checkWin(); });
     return;
@@ -622,6 +696,7 @@ function startReplay() {
   }
   const token = {};
   r.replay = { token, aim: null };
+  const faces = countFaces(r.arrows);
   let i = 0;
   const step = () => {
     if (state !== r || r.replay?.token !== token) return;
@@ -632,7 +707,10 @@ function startReplay() {
     ids.forEach((id) => aim.add(world.localToWorld(v3(r.board.center(headCell(r.arrows[id]))))));
     if (aim.lengthSq() > 1e-6) r.replay.aim = aim.normalize();
     sfx.pluck(note);
-    ids.forEach((id) => flyAway(r.arrows[id]));
+    ids.forEach((id) => {
+      flyAway(r.arrows[id]);
+      takeFromFaces(faces, r.arrows[id]).forEach(flashFace);
+    });
     setTimeout(step, BEAT * (note[1] || 1));
   };
   // Look at the first arrow, then give the camera a moment to get there.
