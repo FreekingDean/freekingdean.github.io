@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FreekingDean's Playground</title>
+  <meta name="description" content="A suite of small, silly, fun web pages.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎪</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="pr-preview-banner" style="position:sticky;top:0;z-index:2147483647;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;justify-content:center;padding:8px 16px;background:#1f1d1a;color:#fdf8f0;font:600 14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center"><span>You're looking at a preview of PR #9</span><a href="https://freekingdean.github.io/" style="color:#ff7a50">← Back to the live site</a></div>
+  <header class="hero">
+    <p class="eyebrow">freekingdean.github.io</p>
+    <h1>The Playground</h1>
+    <p class="tagline">A suite of small web pages, built for fun. Pick one and poke at it.</p>
+  </header>
+
+  <main>
+    <!--
+      Add a mini-site:
+        1. Make a folder, e.g. snake/, with its own index.html.
+        2. Copy a card below and point href at the folder (keep it relative: "snake/").
+    -->
+    <ul class="grid">
+      <li>
+        <a class="card" href="hello/">
+          <span class="emoji" aria-hidden="true">👋</span>
+          <h2>Hello</h2>
+          <p>The very first mini-site. Click the button, get a greeting.</p>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="games/">
+          <span class="emoji" aria-hidden="true">🎮</span>
+          <h2>Games</h2>
+          <p>Small games to play in the browser. Start with Tanglecube, a 3D arrow puzzle.</p>
+        </a>
+      </li>
+      <li>
+        <div class="card card--soon">
+          <span class="emoji" aria-hidden="true">🚧</span>
+          <h2>Coming soon</h2>
+          <p>Next idea goes here. Snake? A pixel painter? Who knows.</p>
+        </div>
+      </li>
+    </ul>
+
+    <section class="prs" aria-labelledby="prs-title">
+      <div class="prs-head">
+        <h2 id="prs-title">In the works</h2>
+        <a class="prs-all" href="https://github.com/FreekingDean/freekingdean.github.io/pulls">all PRs on GitHub</a>
+      </div>
+      <p class="prs-intro">Open pull requests, each with a live preview.</p>
+      <ul class="pr-list" id="pr-list">
+        <!-- pr-list:start (filled in by .github/scripts/sync_pages.py on deploy) -->
+        <li class="pr-status">The PR list is built on the live site.</li>
+        <!-- pr-list:end -->
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>Made for fun · <a href="https://github.com/FreekingDean/freekingdean.github.io">source</a></p>
+  </footer>
+</body>
+</html>
