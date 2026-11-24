@@ -21,7 +21,7 @@ Plain static HTML/CSS/JS, no build step. Keep links relative (`hello/`, `../styl
 
 - Merging to `main` deploys the live site.
 - Each PR gets a preview at `https://freekingdean.github.io/pr-preview/pr-<N>/`, with a banner linking back to the live site.
-- After every merge to `main`, each open PR branch gets `main` merged into it, and every preview is rebuilt on top of the new `main`. A branch that conflicts with `main` is left alone and its preview is built from the branch as is. Updating a branch fails when `main` changed workflow files, unless a token with the `workflow` scope is saved as the `PR_UPDATE_TOKEN` secret; the preview is still rebuilt.
+- After every merge to `main`, each open PR branch is rebased onto `main` and force-pushed back (only if nobody pushed to it in the meantime), and every preview is rebuilt. A branch that conflicts with `main` is left alone and its preview is built from the branch as is. Pushing a rebase that picks up workflow changes from `main` needs a token with the `workflow` scope saved as the `PR_UPDATE_TOKEN` secret; without it that push is refused, but the preview is still rebuilt from the rebased code.
 - After every deploy, `.github/scripts/sync_pages.py` rewrites the "In the works" list on the live homepage from the open PRs, and deletes the preview folder of any PR that is no longer open.
 
 One-time setting: **Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / `(root)`**.
