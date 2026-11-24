@@ -3,7 +3,10 @@
 #   - Pull request      -> deploys a preview to gh-pages/pr-preview/pr-<N>/
 #                          (with a "back to the live site" banner) and
 #                          comments the preview link on the PR.
-#   - After either      -> sync job rebuilds the open-PR list on the live
+#   - After a main push -> refresh job merges main into every open PR
+#                          branch and rebuilds each preview on top of the
+#                          new main (so previews pick up site-wide changes).
+#   - After any of them -> sync job rebuilds the open-PR list on the live
 #                          homepage and deletes previews of closed PRs.
 #
 # One-time setup: Settings -> Pages -> Source: "Deploy from a branch",
@@ -57,9 +60,48 @@ jobs:
           # this is a user site; set the base URL explicitly.
           pages-base-url: freekingdean.github.io
 
+  refresh:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          path: pages
+          ref: gh-pages
+          fetch-depth: 0
+      - name: Update open PRs and rebuild their previews
+        working-directory: src
+        env:
+          # Optional: a token with the "workflow" scope in the PR_UPDATE_TOKEN
+          # secret lets it update branches when main changed workflow files,
+          # and makes those updates re-run PR checks. github.token works for
+          # everything else.
+          GH_TOKEN: ${{ secrets.PR_UPDATE_TOKEN || github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          .github/scripts/refresh_previews.sh ../pages
+      - name: Commit and push
+        working-directory: pages
+        run: |
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing to update"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh PR previews against main 🔁"
+          for i in 1 2 3; do
+            git push origin HEAD:gh-pages && exit 0
+            git pull --rebase origin gh-pages
+          done
+          exit 1
+
   sync:
-    needs: [deploy, preview]
-    # Run after whichever of deploy/preview ran (the other is skipped).
+    needs: [deploy, preview, refresh]
+    # Run after whichever jobs ran (the others are skipped).
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     steps:
