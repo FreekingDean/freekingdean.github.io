@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <title>Nibblecrate</title>
-  <meta name="description" content="Tap a crate and its hungry critter rides the belt around a pixel picture, nibbling every pixel of its own colour. Don't jam the dock.">
+  <meta name="description" content="Line up crates of hungry critters and let them nibble a pixel picture (or your own photo) away, one colour at a time.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐹</text></svg>">
   <style>
     :root {
@@ -116,6 +116,23 @@
     #winThumb { display: block; margin: 4px auto 14px; image-rendering: pixelated; }
     .help { font-size: 0.88rem; color: var(--muted); text-align: left; margin: 0 0 16px; padding-left: 18px; }
     .help li { margin-bottom: 4px; }
+    .dialog h3 { margin: 0 0 8px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); text-align: left; }
+    .sizes { display: flex; gap: 6px; margin-bottom: 10px; }
+    .sizes label { flex: 1; }
+    .sizes input { position: absolute; opacity: 0; pointer-events: none; }
+    .sizes span { display: block; padding: 8px 0; border: 1px solid var(--border); border-radius: 999px; font-size: 0.85rem; cursor: pointer; }
+    .sizes input:checked + span { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+    .sizes input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .fine { font-size: 0.75rem; margin: 8px 0 16px !important; }
+    #toast {
+      position: fixed; left: 50%; top: 84px; transform: translateX(-50%);
+      padding: 8px 14px; border-radius: 999px; max-width: calc(100% - 32px); text-align: center;
+      background: var(--panel); border: 1px solid var(--border);
+      font-size: 0.9rem; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    #loading { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; pointer-events: none; }
+    #loading.show { display: flex; }
     #levelGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
     #levelGrid .lv {
       display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
@@ -157,8 +174,8 @@
 
   <div class="overlay" id="loseOverlay">
     <div class="dialog">
-      <h2>Belt jam!</h2>
-      <p id="loseText">A hungry critter came round and found no room on the dock.</p>
+      <h2>Stuck!</h2>
+      <p id="loseText"></p>
       <div class="row">
         <button id="btnRetry">Start over</button>
         <button class="primary" id="squeeze">Squeeze in one more slot</button>
@@ -170,12 +187,24 @@
     <div class="dialog">
       <h2>Nibblecrate</h2>
       <ul class="help">
-        <li>Tap a crate to let its critter out. It rides the belt once around the picture.</li>
-        <li>On the way it nibbles the first pixel it sees in each row and column, but only if that pixel is its own colour. The number is how hungry it still is.</li>
-        <li>Still hungry after a lap? It waits on the dock. Tap it to send it round again.</li>
-        <li>If a critter comes back and the dock is full, the belt jams. Eat the whole picture to win.</li>
+        <li>Tap a crate to put it in the active row.</li>
+        <li>Crates in the row send their critters out to nibble pixels of their own colour. A critter can only reach a pixel that touches the open air around the picture.</li>
+        <li>A crate leaves the row once it has eaten its number. If the row is full and nobody can reach anything, you're stuck.</li>
       </ul>
+      <h3>Pictures</h3>
       <div id="levelGrid"></div>
+      <h3>Photos</h3>
+      <div class="sizes" role="radiogroup" aria-label="Photo size">
+        <label><input type="radio" name="psize" value="s"><span>Small</span></label>
+        <label><input type="radio" name="psize" value="m" checked><span>Medium</span></label>
+        <label><input type="radio" name="psize" value="l"><span>Large</span></label>
+      </div>
+      <div class="row">
+        <button id="btnPhoto">Random photo</button>
+        <button id="btnUpload">Upload your own</button>
+      </div>
+      <p class="fine">Random photos come from picsum.photos. Uploads stay on your device.</p>
+      <input type="file" id="file" accept="image/*" hidden>
       <div class="row">
         <button id="btnRandom">Random critter</button>
         <button id="btnRestart">Restart</button>
@@ -183,6 +212,9 @@
       </div>
     </div>
   </div>
+
+  <div id="toast" role="status"></div>
+  <div id="loading"><span class="pill" id="loadingText">Loading…</span></div>
 
   <script type="module" src="game.js"></script>
 </body>

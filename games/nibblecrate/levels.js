@@ -313,10 +313,9 @@ export function randomPicture(seed) {
 // --- Crates --------------------------------------------------------------
 
 // "Onion peel" depth of every pixel: 0 for pixels a critter can reach right
-// away (first in their row or column from any side), 1 for the ones exposed
-// once those are gone, and so on.
+// away (touching the open air outside the picture), 1 for the ones that
+// touch air once those are eaten, and so on.
 export function peelDepths(grid) {
-  const h = grid.length, w = grid[0].length;
   const g = grid.map((r) => r.slice());
   const depth = grid.map((r) => r.map(() => -1));
   let left = 0;
@@ -334,25 +333,56 @@ export function peelDepths(grid) {
   return depth;
 }
 
+// Empty cells connected to the outside of the picture.
+export function airMap(g) {
+  const h = g.length, w = g[0].length;
+  const air = new Uint8Array(w * h);
+  const stack = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if ((x === 0 || y === 0 || x === w - 1 || y === h - 1) && !g[y][x]) { air[y * w + x] = 1; stack.push(y * w + x); }
+  }
+  floodAir(g, air, stack);
+  return air;
+}
+
+export function floodAir(g, air, stack) {
+  const h = g.length, w = g[0].length;
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % w, y = (i - x) / w;
+    for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + ox, ny = y + oy;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const j = ny * w + nx;
+      if (!air[j] && !g[ny][nx]) { air[j] = 1; stack.push(j); }
+    }
+  }
+}
+
+// Can a critter get at this pixel? Only if it touches the outside air.
+export function touchesAir(g, air, x, y) {
+  const h = g.length, w = g[0].length;
+  if (x === 0 || y === 0 || x === w - 1 || y === h - 1) return true;
+  return air[y * w + x - 1] || air[y * w + x + 1] || air[(y - 1) * w + x] || air[(y + 1) * w + x];
+}
+
 export function exposedCells(g) {
   const h = g.length, w = g[0].length;
-  const out = new Set();
-  const add = (x, y) => out.add(y * w + x);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) if (g[y][x]) { add(x, y); break; }
-    for (let x = w - 1; x >= 0; x--) if (g[y][x]) { add(x, y); break; }
+  const air = airMap(g);
+  const out = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (g[y][x] && touchesAir(g, air, x, y)) out.push([x, y]);
   }
-  for (let x = 0; x < w; x++) {
-    for (let y = 0; y < h; y++) if (g[y][x]) { add(x, y); break; }
-    for (let y = h - 1; y >= 0; y--) if (g[y][x]) { add(x, y); break; }
-  }
-  return [...out].map((i) => [i % w, Math.floor(i / w)]);
+  return out;
 }
 
 // Split each colour's pixels into crates (outermost pixels first), then
 // order every crate by how deep its pixels sit, with a little shuffle, and
 // deal them into columns. Crate counts add up exactly to the pixel counts,
 // so a cleared picture always empties every crate.
+export let JITTER = 1.0;
+export function setJitter(j) { JITTER = j; }
+
 export function makeCrates(grid, seed) {
   const rand = rng(seed * 40503 + 17);
   const depth = peelDepths(grid);
@@ -360,10 +390,12 @@ export function makeCrates(grid, seed) {
   grid.forEach((row, y) => row.forEach((c, x) => {
     if (c) (byColor[c] = byColor[c] || []).push(depth[y][x]);
   }));
-  let total = 0;
-  for (const k in byColor) total += byColor[k].length;
-  const lo = total < 110 ? 5 : 8;
-  const hi = total < 110 ? 12 : 20;
+  let total = 0, maxDepth = 0;
+  for (const k in byColor) { total += byColor[k].length; for (const d of byColor[k]) maxDepth = Math.max(maxDepth, d); }
+  // How far out of order a crate may come. More shuffle = more planning.
+  const jitter = 1.2 + maxDepth * JITTER;
+  const lo = total < 110 ? 5 : total < 450 ? 8 : 20;
+  const hi = total < 110 ? 12 : total < 450 ? 24 : 50;
 
   const crates = [];
   for (const color of Object.keys(byColor)) {
@@ -374,12 +406,12 @@ export function makeCrates(grid, seed) {
       if (ds.length - (i + size) < lo) size = ds.length - i;
       const chunk = ds.slice(i, i + size);
       const mean = chunk.reduce((a, b) => a + b, 0) / chunk.length;
-      crates.push({ color, count: chunk.length, key: chunk[0] * 0.6 + mean * 0.4 + rand() * 1.2 });
+      crates.push({ color, count: chunk.length, key: chunk[0] * 0.6 + mean * 0.4 + rand() * jitter });
       i += size;
     }
   }
   crates.sort((a, b) => a.key - b.key);
-  const cols = crates.length > 14 ? 4 : 3;
+  const cols = crates.length > 40 ? 5 : crates.length > 14 ? 4 : 3;
   const columns = Array.from({ length: cols }, () => []);
   crates.forEach((c, i) => columns[i % cols].push({ color: c.color, count: c.count }));
   return columns;
