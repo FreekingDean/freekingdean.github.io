@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { AXES, cellKey, generate } from './puzzle.js';
+import * as sfx from './sound.js';
 
 // ---------------------------------------------------------------------------
 // Levels. Each is generated from a fixed seed, so everyone gets the same
@@ -326,7 +327,8 @@ const solved = new Set(store.get('solved', []));
 let cubeMesh = null;
 
 // index: a level number, or -1 for a custom cube described by `custom`.
-function loadLevel(index, custom) {
+// saved: progress to restore (see saveProgress), or nothing for a fresh start.
+function loadLevel(index, custom, saved) {
   const level = custom || LEVELS[Math.max(0, Math.min(LEVELS.length - 1, index))];
   if (!custom) index = LEVELS.indexOf(level);
   const n = level.size[0] * level.size[1] * level.size[2];
@@ -334,13 +336,13 @@ function loadLevel(index, custom) {
     // Big cubes take a moment to build; say so before the page stalls.
     ui.loadingText.textContent = `Building a ${level.size.join('×')} cube…`;
     ui.loading.classList.add('show');
-    requestAnimationFrame(() => requestAnimationFrame(() => { build(index, level); ui.loading.classList.remove('show'); }));
+    requestAnimationFrame(() => requestAnimationFrame(() => { build(index, level, saved); ui.loading.classList.remove('show'); }));
   } else {
-    build(index, level);
+    build(index, level, saved);
   }
 }
 
-function build(index, level) {
+function build(index, level, saved) {
   tweens.clear();
   world.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
   world.clear();
@@ -369,11 +371,54 @@ function build(index, level) {
 
   view.half = level.size.map((s) => s / 2);
   fitCamera();
+  if (saved) restore(saved);
   if (index >= 0) store.set('current', index);
+  saveProgress();
   ui.win.classList.remove('show');
   ui.lose.classList.remove('show');
   updateHud();
 }
+
+// ---------------------------------------------------------------------------
+// Saved progress. Levels are generated from a seed, so the same cube can be
+// rebuilt on reload; we only need to remember which arrows are gone, the
+// hearts, and where the camera was.
+// ---------------------------------------------------------------------------
+function saveProgress() {
+  if (!state) return;
+  if (state.over) { store.set('progress', null); return; }
+  store.set('progress', {
+    index: state.index,
+    custom: state.index < 0 ? state.level : null,
+    gone: state.arrows.filter((a) => a.gone).map((a) => a.id),
+    lives: state.lives,
+    bonks: state.bonks,
+    cam: camera.position.toArray().map((x) => +x.toFixed(4)),
+    alt: view.alt,
+  });
+}
+
+function restore(saved) {
+  for (const id of saved.gone || []) {
+    const a = state.arrows[id];
+    if (!a || a.gone) continue;
+    a.gone = true;
+    a.cells.forEach((c) => state.occ.delete(c.key));
+    setVisible(a, false);
+    state.left--;
+  }
+  if (typeof saved.lives === 'number') state.lives = Math.max(1, Math.min(state.maxLives, saved.lives));
+  state.bonks = saved.bonks || 0;
+  if (Array.isArray(saved.cam) && saved.cam.length === 3) {
+    camera.position.fromArray(saved.cam);
+    if (saved.alt > 0) view.alt = Math.min(view.fitAlt * 2.5, Math.max(1.2, saved.alt));
+    controls.update();
+  }
+}
+
+// Keep the camera position too, whenever the page is hidden or closed.
+window.addEventListener('pagehide', saveProgress);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveProgress(); });
 
 // ---------------------------------------------------------------------------
 // Camera: the orbit controls pick the direction; we keep the camera a set
@@ -475,6 +520,8 @@ function tapArrow(arrow) {
     state.left--;
     state.flying++;
     updateHud();
+    sfx.slide();
+    if (state.left) saveProgress();
     setVisible(arrow, false);
     const mesh = movingMesh(arrow, INK);
     const distance = arrow.path.bodyLen + 14;
@@ -496,6 +543,8 @@ function tapArrow(arrow) {
   if (settings.hearts) state.lives--;
   updateHud();
   try { navigator.vibrate && navigator.vibrate(40); } catch { /* ignore */ }
+  sfx.bonk();
+  saveProgress();
   setVisible(arrow, false);
   setColor(block.other, BONK);
   const mesh = movingMesh(arrow, BONK);
@@ -512,6 +561,8 @@ function tapArrow(arrow) {
       if (!block.other.gone) setColor(block.other, INK);
       if (settings.hearts && state.lives <= 0) {
         state.over = true;
+        saveProgress();
+        sfx.lose();
         ui.lose.classList.add('show');
       }
     });
@@ -522,6 +573,8 @@ function tapArrow(arrow) {
 function checkWin() {
   if (state.over || state.left || state.flying) return;
   state.over = true;
+  saveProgress();
+  sfx.win();
   if (state.index >= 0) {
     solved.add(state.index);
     store.set('solved', [...solved]);
@@ -554,6 +607,7 @@ function showHint() {
   }
   if (!best) return;
   state.hint = best;
+  sfx.hint();
   const h = headCell(best);
   const target = world.localToWorld(v3(state.board.center(h)));
   const onScreen = target.clone().project(camera);
@@ -611,6 +665,10 @@ const pinchDistance = () => {
   return Math.hypot(a.x - b.x, a.y - b.y);
 };
 const canvas = renderer.domElement;
+// Audio can only start after a user gesture.
+window.addEventListener('pointerdown', sfx.unlock, { capture: true });
+window.addEventListener('keydown', sfx.unlock, { capture: true });
+
 canvas.addEventListener('pointerdown', (e) => {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now(), multi: pointers.size > 0 });
   if (pointers.size > 1) for (const d of pointers.values()) d.multi = true;
@@ -684,6 +742,18 @@ heartsToggle.addEventListener('change', () => {
   if (state) { state.lives = state.maxLives; updateHud(); }
 });
 
+const soundButton = $('btnSound');
+const showSound = (m) => { soundButton.textContent = m ? '🔇' : '🔊'; soundButton.setAttribute('aria-label', m ? 'Turn sound on' : 'Turn sound off'); };
+let muted = store.get('muted', false);
+sfx.setMuted(muted);
+showSound(muted);
+soundButton.addEventListener('click', () => {
+  muted = !muted;
+  store.set('muted', muted);
+  sfx.setMuted(muted);
+  showSound(muted);
+});
+
 $('btnLevels').addEventListener('click', () => { renderLevelGrid(); ui.levels.classList.add('show'); });
 $('btnCloseLevels').addEventListener('click', () => ui.levels.classList.remove('show'));
 const replay = () => loadLevel(state.index, state.index < 0 ? state.level : undefined);
@@ -719,7 +789,12 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-loadLevel(store.get('current', 0));
+const saved = store.get('progress', null);
+if (saved && (saved.custom ? Array.isArray(saved.custom.size) : LEVELS[saved.index])) {
+  loadLevel(saved.custom ? -1 : saved.index, saved.custom || undefined, saved);
+} else {
+  loadLevel(store.get('current', 0));
+}
 if (!store.get('seenHelp', false)) {
   store.set('seenHelp', true);
   renderLevelGrid();
