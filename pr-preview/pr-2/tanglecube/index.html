@@ -94,6 +94,11 @@
       font-size: 0.9rem; opacity: 0; transition: opacity 0.2s; pointer-events: none;
     }
     #toast.show { opacity: 1; }
+    .skip {
+      position: fixed; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 60px);
+      translate: -50% 0; display: none;
+    }
+    .skip.show { display: block; }
 
     .overlay {
       position: fixed; inset: 0;
@@ -190,6 +195,7 @@
   </div>
 
   <div id="toast"></div>
+  <button id="btnSkip" class="skip">Skip replay</button>
   <div id="loading"><span class="pill" id="loadingText">Building cube…</span></div>
 
   <div class="overlay" id="winOverlay">
@@ -197,7 +203,8 @@
       <h2>Cleared!</h2>
       <p id="winText">Nice untangling.</p>
       <div class="row">
-        <button id="btnReplay">Replay</button>
+        <button id="btnWatch">Watch again</button>
+        <button id="btnReplay">Play again</button>
         <button class="primary" id="btnNext">Next level</button>
       </div>
     </div>

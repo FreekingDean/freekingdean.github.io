@@ -154,16 +154,23 @@ function hiss(start, { from, to, q = 1.2, gain = 0.08, duration = 0.3, type = 'b
   src.stop(start + duration + 0.05);
 }
 
-// An arrow slides off: the next note of the song, plus a soft whoosh.
-export function slide() {
+// Play one song note as a soft pluck plus a whoosh.
+export function pluck([semitones, hold = 1]) {
   if (!ready()) return;
   const now = ctx.currentTime;
-  const [semitones, hold = 1] = nextNote();
   const f = note(semitones);
   tone(f, now, { gain: 0.22, decay: 0.5 * hold });
   tone(f * 2, now, { type: 'sine', gain: 0.05, decay: 0.3 * hold });
   tone(f / 2, now, { type: 'sine', gain: 0.08, decay: 0.4 * hold });
   hiss(now + 0.03, { from: 500, to: 3200, duration: 0.3, gain: 0.04 });
+}
+
+// An arrow slides off: play the next note of the song. Returns the note so
+// the clear can be replayed with the same tune.
+export function slide() {
+  const n = nextNote();
+  pluck(n);
+  return n;
 }
 
 // Bumped into another arrow: a low, soft thud.
