@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-  <title>Slipstack</title>
-  <meta name="description" content="A 3D puzzle: tap blocks to slide them out along their arrows, without crashing into anything.">
+  <title>Tanglecube</title>
+  <meta name="description" content="A 3D puzzle: arrows wind around a cube. Tap one to send it off, but only if nothing is in front of its head.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧊</text></svg>">
   <style>
     :root {
@@ -16,6 +16,7 @@
       --border: #e8dfd0;
       --accent: #e4572e;
       --heart: #e4572e;
+      --ink: #1c1d24;
       color-scheme: light dark;
     }
     @media (prefers-color-scheme: dark) {
@@ -28,6 +29,7 @@
         --border: #34313b;
         --accent: #ff7a50;
         --heart: #ff7a50;
+        --ink: #1c1d24;
       }
     }
     * { box-sizing: border-box; }
@@ -113,6 +115,15 @@
     .dialog h2 { margin: 0 0 6px; font-size: 1.6rem; }
     .dialog p { margin: 0 0 18px; color: var(--muted); }
     .dialog .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .zoom {
+      position: fixed; right: 16px; top: 50%; transform: translateY(-50%);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .zoom button { width: 44px; height: 44px; padding: 0; font-size: 1.2rem; }
+    @media (max-width: 600px) {
+      .zoom { top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 56px); transform: none; flex-direction: row; }
+      .zoom button { width: 40px; height: 40px; }
+    }
     #levelGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
     #levelGrid button { padding: 12px 0; border-radius: 12px; }
     #levelGrid button:disabled { opacity: 0.35; cursor: default; }
@@ -136,7 +147,7 @@
 
   <div class="bar top">
     <a class="pill" href="../">← Playground</a>
-    <div class="pill title"><strong id="levelName">Slipstack</strong><span id="remaining"></span></div>
+    <div class="pill title"><strong id="levelName">Tanglecube</strong><span id="remaining"></span></div>
     <div class="pill" id="hearts" aria-label="Lives"></div>
   </div>
 
@@ -146,12 +157,18 @@
     <button id="btnHint">Hint</button>
   </div>
 
+  <div class="zoom">
+    <button id="btnZoomIn" aria-label="Zoom in">+</button>
+    <button id="btnZoomOut" aria-label="Zoom out">−</button>
+    <button id="btnView" aria-label="Reset view">⟲</button>
+  </div>
+
   <div id="toast"></div>
 
   <div class="overlay" id="winOverlay">
     <div class="dialog">
       <h2>Cleared!</h2>
-      <p id="winText">Nice sliding.</p>
+      <p id="winText">Nice untangling.</p>
       <div class="row">
         <button id="btnReplay">Replay</button>
         <button class="primary" id="btnNext">Next level</button>
@@ -162,7 +179,7 @@
   <div class="overlay" id="loseOverlay">
     <div class="dialog">
       <h2>Crunch.</h2>
-      <p>Out of lives. Blocks only slide out if nothing is in their way.</p>
+      <p>Out of hearts. An arrow only gets out if nothing on its face is in front of its head.</p>
       <div class="row">
         <button class="primary" id="btnRetry">Try again</button>
       </div>
@@ -171,12 +188,12 @@
 
   <div class="overlay" id="levelsOverlay">
     <div class="dialog">
-      <h2>Slipstack</h2>
+      <h2>Tanglecube</h2>
       <ul class="help">
-        <li>Tap a block to slide it out the way its arrow points.</li>
-        <li>If another block is in the way, it bonks and you lose a heart.</li>
-        <li>Drag to spin the stack, pinch or scroll to zoom.</li>
-        <li>Clear every block to win.</li>
+        <li>Tap an arrow to send it off the way its head points.</li>
+        <li>It slides straight along its face, so anything on that face in front of its head blocks it. Bodies can wrap round corners; heads can't.</li>
+        <li>Bonk into another arrow and you lose a heart. Three and you start over.</li>
+        <li>Drag to turn the cube. Arrows on the back count too.</li>
       </ul>
       <div id="levelGrid"></div>
       <div class="row"><button class="primary" id="btnCloseLevels">Play</button></div>
