@@ -11,8 +11,28 @@ let muted = false;
 // plays the tune through. All of these are public-domain melodies.
 //
 // Notes are written as name + octave (C5 is the C above middle C), with a
-// "-" on the end for each extra beat a phrase-ending note should ring.
+// "-" on the end for each extra beat a note should ring, or a "." for a
+// quick half-beat note.
 const SONGS = {
+  canon: {
+    name: 'Canon in D (Pachelbel)',
+    // Variations over the ground bass D A Bm F#m G D G A, each one busier
+    // than the last, then back down to a slow close.
+    notes: `F#5- E5- D5- C#5- B4- A4- B4- C#5-
+            D5- C#5- B4- A4- G4- F#4- G4- E4-
+            D4 F#4 A4 G4 F#4 D4 F#4 E4 D4 B3 D4 A4 G4 B4 A4 G4
+            F#4 D4 E4 C#5 D5 F#5 A5 A4 B4 G4 A4 F#4 D4 D5 D5- C#5-
+            D5. C#5. D5. D4. C#4. A4. E4. F#4. D4. D5. C#5. B4. C#5. F#5. A5. B5.
+            G5. F#5. E5. G5. F#5. E5. D5. C#5. B4. A4. G4. F#4. E4. G4. F#4. E4.
+            D5. F#5. E5. D5. C#5. E5. D5. C#5. B4. D5. C#5. B4. A4. C#5. B4. A4.
+            G4. B4. A4. G4. F#4. A4. G4. F#4. G4. B4. A4. G4. A4. C#5. B4. A4.
+            F#5. E5. D5. E5. F#5. G5. A5. F#5. E5. C#5. A4. C#5. E5. F#5. G5. E5.
+            D5. B4. F#4. B4. D5. E5. F#5. D5. C#5. A4. F#4. A4. C#5. D5. E5. C#5.
+            B4. G4. D4. G4. B4. C#5. D5. B4. A4. F#4. D4. F#4. A4. B4. C#5. A4.
+            B4. D5. G5. D5. B4. G4. B4. D5. C#5. E5. A5. E5. C#5. A4. B4. C#5.
+            D4 F#4 A4 G4 F#4 D4 F#4 E4 D4 B3 D4 A4 G4 B4 A4 G4
+            F#5- E5- D5- C#5- B4- A4- B4- C#5- D5---`,
+  },
   mountain: {
     name: 'In the Hall of the Mountain King (Grieg)',
     notes: `A4 B4 C5 D5 E5 C5 E5- D#5 B4 D#5- D5 Bb4 D5- A4 B4 C5 D5 E5 C5 E5 A5 G5 E5 C5 E5 G5--
@@ -45,7 +65,7 @@ const SONGS = {
             C5 C5 G5 G5 A5 A5 G5- F5 F5 E5 E5 D5 D5 C5--`,
   },
 };
-const PLAYLIST = ['mountain', 'ode', 'korobeiniki', 'elise', 'nachtmusik', 'twinkle'];
+const PLAYLIST = ['canon', 'mountain', 'ode', 'korobeiniki', 'elise', 'nachtmusik', 'twinkle'];
 
 const ROOT = 523.25; // C5
 const note = (semitones) => ROOT * Math.pow(2, semitones / 12);
@@ -54,10 +74,10 @@ const NAMES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 // "D#5--" -> [semitones above C5, beats held]
 function parse(text) {
   return text.trim().split(/\s+/).map((tok) => {
-    const m = /^([A-G])([#b]?)(\d)(-*)$/.exec(tok);
+    const m = /^([A-G])([#b]?)(\d)(-*|\.)$/.exec(tok);
     if (!m) throw new Error(`bad note ${tok}`);
     const semis = NAMES[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (Number(m[3]) - 5) * 12;
-    return [semis, 1 + m[4].length];
+    return [semis, m[4] === '.' ? 0.5 : 1 + m[4].length];
   });
 }
 for (const song of Object.values(SONGS)) song.parsed = parse(song.notes);
