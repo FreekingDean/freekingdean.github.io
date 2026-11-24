@@ -193,6 +193,21 @@ export function slide() {
   return n;
 }
 
+// A whole side cleared: play the next few notes of the song as a quick run,
+// with a little sparkle on top.
+export function phrase(count = 6, beat = 0.17) {
+  if (!ready()) return;
+  let t = ctx.currentTime + 0.12;
+  for (let i = 0; i < count; i++) {
+    const [semitones, hold = 1] = nextNote();
+    const f = note(semitones);
+    tone(f, t, { gain: 0.2, decay: 0.45 * hold });
+    tone(f / 2, t, { type: 'sine', gain: 0.07, decay: 0.4 * hold });
+    t += beat * Math.min(hold, 2);
+  }
+  [24, 28, 31, 36].forEach((s, i) => tone(note(s), t + i * 0.05, { type: 'sine', gain: 0.05, decay: 0.5 }));
+}
+
 // Bumped into another arrow: a low, soft thud.
 export function bonk() {
   if (!ready()) return;
