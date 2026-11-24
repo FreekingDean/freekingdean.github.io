@@ -3,9 +3,9 @@
 #   - Pull request      -> deploys a preview to gh-pages/pr-preview/pr-<N>/
 #                          (with a "back to the live site" banner) and
 #                          comments the preview link on the PR.
-#   - After a main push -> refresh job merges main into every open PR
-#                          branch and rebuilds each preview on top of the
-#                          new main (so previews pick up site-wide changes).
+#   - After a main push -> refresh job rebases every open PR branch onto
+#                          main, pushes it back to the branch, and rebuilds
+#                          each preview (so previews pick up site-wide changes).
 #   - After any of them -> sync job rebuilds the open-PR list on the live
 #                          homepage and deletes previews of closed PRs.
 #
@@ -68,18 +68,19 @@ jobs:
         with:
           path: src
           fetch-depth: 0
+          # Optional: a token with the "workflow" scope in the PR_UPDATE_TOKEN
+          # secret lets it push rebases that pick up workflow changes from
+          # main, and makes those pushes re-run PR checks. github.token works
+          # for everything else.
+          token: ${{ secrets.PR_UPDATE_TOKEN || github.token }}
       - uses: actions/checkout@v4
         with:
           path: pages
           ref: gh-pages
           fetch-depth: 0
-      - name: Update open PRs and rebuild their previews
+      - name: Rebase open PRs and rebuild their previews
         working-directory: src
         env:
-          # Optional: a token with the "workflow" scope in the PR_UPDATE_TOKEN
-          # secret lets it update branches when main changed workflow files,
-          # and makes those updates re-run PR checks. github.token works for
-          # everything else.
           GH_TOKEN: ${{ secrets.PR_UPDATE_TOKEN || github.token }}
         run: |
           git config user.name "github-actions[bot]"
