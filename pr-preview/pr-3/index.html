@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FreekingDean's Playground</title>
+  <meta name="description" content="A suite of small, silly, fun web pages.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎪</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <p class="eyebrow">freekingdean.github.io</p>
+    <h1>The Playground</h1>
+    <p class="tagline">A suite of small web pages, built for fun. Pick one and poke at it.</p>
+  </header>
+
+  <main>
+    <!--
+      Add a mini-site:
+        1. Make a folder, e.g. snake/, with its own index.html.
+        2. Copy a card below and point href at the folder (keep it relative: "snake/").
+    -->
+    <ul class="grid">
+      <li>
+        <a class="card" href="hello/">
+          <span class="emoji" aria-hidden="true">👋</span>
+          <h2>Hello</h2>
+          <p>The very first mini-site. Click the button, get a greeting.</p>
+        </a>
+      </li>
+      <li>
+        <a class="card" href="compute/">
+          <span class="emoji" aria-hidden="true">🧮</span>
+          <h2>Compute Compare</h2>
+          <p>GPUs, AI accelerator cards and AI boxes side by side: price, memory, bandwidth, tensor throughput.</p>
+        </a>
+      </li>
+      <li>
+        <div class="card card--soon">
+          <span class="emoji" aria-hidden="true">🚧</span>
+          <h2>Coming soon</h2>
+          <p>Next idea goes here. Snake? A pixel painter? Who knows.</p>
+        </div>
+      </li>
+    </ul>
+  </main>
+
+  <footer>
+    <p>Made for fun · <a href="https://github.com/FreekingDean/freekingdean.github.io">source</a></p>
+  </footer>
+</body>
+</html>
