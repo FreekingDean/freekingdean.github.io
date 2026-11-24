@@ -67,6 +67,12 @@ h1 {
   color: var(--muted);
 }
 
+.hero-links { margin: 20px 0 0; font-weight: 600; }
+
+.hero-links a { text-decoration: none; }
+
+.hero-links a:hover, .hero-links a:focus-visible { text-decoration: underline; }
+
 main { flex: 1; }
 
 .grid {
