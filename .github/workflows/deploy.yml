@@ -46,3 +46,6 @@ jobs:
           source-dir: .
           preview-branch: gh-pages
           umbrella-dir: pr-preview
+          # Repo name casing differs from the owner, so the action can't tell
+          # this is a user site; set the base URL explicitly.
+          pages-base-url: freekingdean.github.io
