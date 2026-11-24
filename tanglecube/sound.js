@@ -7,14 +7,30 @@ let master = null;
 let noise = null;
 let muted = false;
 
-// Each arrow that escapes in quick succession plays the next note up a
-// pentatonic scale, so a good run sounds like a little tune.
-const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28, 31, 33, 36];
-const ROOT = 392; // G4
-let combo = 0;
-let lastSlide = 0;
-
+// Each arrow that escapes plays the next note of a song, so clearing the
+// cube plays it through, looping at the end. Notes are semitones above C5;
+// a second value of 2 marks a held note at the end of a phrase.
+const ROOT = 523.25; // C5
 const note = (semitones) => ROOT * Math.pow(2, semitones / 12);
+
+const C = 0, D = 2, E = 4, F = 5, G = 7, A = 9;
+const SONG = [
+  // Twinkle, twinkle, little star, how I wonder what you are
+  [C], [C], [G], [G], [A], [A], [G, 2], [F], [F], [E], [E], [D], [D], [C, 2],
+  // Up above the world so high, like a diamond in the sky
+  [G], [G], [F], [F], [E], [E], [D, 2], [G], [G], [F], [F], [E], [E], [D, 2],
+  // Twinkle, twinkle, little star, how I wonder what you are
+  [C], [C], [G], [G], [A], [A], [G, 2], [F], [F], [E], [E], [D], [D], [C, 2],
+];
+
+let songPos = 0;
+try { songPos = Number(localStorage.getItem('tanglecube.songPos')) % SONG.length || 0; } catch { /* ignore */ }
+function nextNote() {
+  const n = SONG[songPos];
+  songPos = (songPos + 1) % SONG.length;
+  try { localStorage.setItem('tanglecube.songPos', String(songPos)); } catch { /* ignore */ }
+  return n;
+}
 
 export function unlock() {
   if (!ctx) {
@@ -72,24 +88,22 @@ function hiss(start, { from, to, q = 1.2, gain = 0.08, duration = 0.3, type = 'b
   src.stop(start + duration + 0.05);
 }
 
-// An arrow slides off: a plucked note plus a soft whoosh.
+// An arrow slides off: the next note of the song, plus a soft whoosh.
 export function slide() {
   if (!ready()) return;
   const now = ctx.currentTime;
-  const t = performance.now();
-  combo = t - lastSlide < 2200 ? Math.min(combo + 1, SCALE.length - 1) : 0;
-  lastSlide = t;
-  const f = note(SCALE[combo]);
-  tone(f, now, { gain: 0.22, decay: 0.45 });
-  tone(f * 2, now, { type: 'sine', gain: 0.06, decay: 0.25 });
-  hiss(now + 0.03, { from: 500, to: 3200, duration: 0.32, gain: 0.06 });
+  const [semitones, hold = 1] = nextNote();
+  const f = note(semitones);
+  tone(f, now, { gain: 0.22, decay: 0.5 * hold });
+  tone(f * 2, now, { type: 'sine', gain: 0.05, decay: 0.3 * hold });
+  tone(f / 2, now, { type: 'sine', gain: 0.08, decay: 0.4 * hold });
+  hiss(now + 0.03, { from: 500, to: 3200, duration: 0.3, gain: 0.04 });
 }
 
 // Bumped into another arrow: a low, soft thud.
 export function bonk() {
   if (!ready()) return;
   const now = ctx.currentTime;
-  combo = 0;
   tone(170, now, { type: 'sine', gain: 0.5, decay: 0.22, slideTo: 60 });
   hiss(now, { from: 900, to: 200, type: 'lowpass', q: 0.7, duration: 0.12, gain: 0.25 });
 }
@@ -99,23 +113,23 @@ export function win() {
   if (!ready()) return;
   const now = ctx.currentTime + 0.05;
   [0, 4, 7, 12, 16, 19, 24].forEach((s, i) => {
-    tone(note(s + 5), now + i * 0.075, { gain: 0.18, decay: 0.9 });
+    tone(note(s - 12), now + i * 0.075, { gain: 0.18, decay: 0.9 });
   });
-  tone(note(5), now + 0.5, { type: 'sine', gain: 0.12, attack: 0.05, decay: 1.6 });
-  tone(note(9), now + 0.5, { type: 'sine', gain: 0.1, attack: 0.05, decay: 1.6 });
+  tone(note(-12), now + 0.5, { type: 'sine', gain: 0.12, attack: 0.05, decay: 1.6 });
+  tone(note(-8), now + 0.5, { type: 'sine', gain: 0.1, attack: 0.05, decay: 1.6 });
 }
 
 // Hint: two light pings.
 export function hint() {
   if (!ready()) return;
   const now = ctx.currentTime;
-  tone(note(24), now, { type: 'sine', gain: 0.12, decay: 0.25 });
-  tone(note(31), now + 0.09, { type: 'sine', gain: 0.1, decay: 0.35 });
+  tone(note(12), now, { type: 'sine', gain: 0.12, decay: 0.25 });
+  tone(note(19), now + 0.09, { type: 'sine', gain: 0.1, decay: 0.35 });
 }
 
 // Out of hearts: a sad little fall.
 export function lose() {
   if (!ready()) return;
   const now = ctx.currentTime;
-  [7, 3, 0].forEach((s, i) => tone(note(s - 5), now + i * 0.16, { gain: 0.18, decay: 0.5 }));
+  [7, 3, 0].forEach((s, i) => tone(note(s - 12), now + i * 0.16, { gain: 0.18, decay: 0.5 }));
 }
