@@ -8,14 +8,16 @@ let noise = null;
 let muted = false;
 
 // Each arrow that escapes plays the next note of a song, so clearing a cube
-// plays the tune through. All of these are public-domain melodies.
+// plays the tune through. All of these are public-domain melodies. Apart
+// from the Canon, each is the complete piece with its repeats, taken from
+// the scores in the music21 corpus (the top line of the melody part).
 //
 // Notes are written as name + octave (C5 is the C above middle C), with a
 // "-" on the end for each extra beat a note should ring, or a "." for a
 // quick half-beat note.
 const SONGS = {
   canon: {
-    name: 'Canon in D (Pachelbel)',
+    name: 'Canon in D (Pachelbel, arranged)',
     // Variations over the ground bass D A Bm F#m G D G A, each one busier
     // than the last, then back down to a slow close.
     notes: `F#5- E5- D5- C#5- B4- A4- B4- C#5-
@@ -33,9 +35,115 @@ const SONGS = {
             D4 F#4 A4 G4 F#4 D4 F#4 E4 D4 B3 D4 A4 G4 B4 A4 G4
             F#5- E5- D5- C#5- B4- A4- B4- C#5- D5---`,
   },
+  mapleLeaf: {
+    name: 'Maple Leaf Rag (Scott Joplin, 1899)',
+    notes: `Ab4. Eb5. Ab4. C5. Eb5 G4. Eb5. G4. Bb4. Eb5-- Ab4. Eb5. Ab4. C5. Eb5
+            G4. Eb5. G4. Bb4. Eb5- Eb5 Ab4. B4. E5 Eb5 Eb5 Ab4. B4. E5 Eb5--- Ab4.
+            B4. Ab5 Ab5. B5. Ab6. Ab6 Ab6 Ab6 Ab6. Ab6 Eb6. F6. C6. Eb6. F6 Ab5 Bb5.
+            B5. Ab5. Bb5. C6 Ab5. C6. Ab5. Bb5 Ab5 Ab5 Ab5 Ab5 Ab5. Ab5 Eb5. F5. C5.
+            Eb5. F5 Ab4 Bb4. B4. Ab4. Bb4. C5 Ab4. C5. Ab4. Bb4 Ab4- C5. Ab4. Bb4
+            Ab4- G5. Eb6. G5. Bb5. D6 G5. C#6. G5. Bb5. C6 Eb5. Bb5. Eb5 C5. Ab5.
+            C5. Eb5. F5 C5. Ab5. C5. Eb5. F5 C5. F5 Eb5. G5. Bb4. C#5. F5 Eb5. G5.
+            Bb4. C#5. F5 C#5. F5 C5. Ab5. C5. Eb5. F5 C5. Ab5. C5. Eb5. F5 C5. F5
+            G5. Eb6. G5. Bb5. D6 G5. C#6. G5. Bb5. C6 Eb5. Bb5. Eb5 C5. Ab5. C5.
+            Eb5. F5 C5. Ab5 Ab5 G5 F#5 F4. A4. C5. F5. C5. A4. F4 F4. Bb4. C#5. F5
+            C#5 C5 C5 Bb4 Eb4. Ab4 Eb5 Eb5 Eb5 G5. Eb6. G5. Bb5. D6 G5. C#6. G5.
+            Bb5. C6 Eb5. Bb5. Eb5 C5. Ab5. C5. Eb5. F5 C5. Ab5. C5. Eb5. F5 C5. F5
+            Eb5. G5. Bb4. C#5. F5 Eb5. G5. Bb4. C#5. F5 C#5. F5 C5. Ab5. C5. Eb5. F5
+            C5. Ab5. C5. Eb5. F5 C5. F5 G5. Eb6. G5. Bb5. D6 G5. C#6. G5. Bb5. C6
+            Eb5. Bb5. Eb5 C5. Ab5. C5. Eb5. F5 C5. Ab5 Ab5 G5 F#5 F4. A4. C5. F5.
+            C5. A4. F4 F4. Bb4. C#5. F5 C#5 C5 C5 Bb4 Eb4 Ab4. C5. Eb5. Ab5- Ab4.
+            Eb5. Ab4. C5. Eb5 G4. Eb5. G4. Bb4. Eb5-- Ab4. Eb5. Ab4. C5. Eb5 G4.
+            Eb5. G4. Bb4. Eb5- Eb5 Ab4. B4. E5 Eb5 Eb5 Ab4. B4. E5 Eb5--- Ab4. B4.
+            Ab5 Ab5. B5. Ab6. Ab6 Ab6 Ab6 Ab6. Ab6 Eb6. F6. C6. Eb6. F6 Ab5 Bb5. B5.
+            Ab5. Bb5. C6 Ab5. C6. Ab5. Bb5 Ab5 Ab5 Ab5 Ab5 Ab5. Ab5 Eb5. F5. C5.
+            Eb5. F5 Ab4 Bb4. B4. Ab4. Bb4. C5 Ab4. C5. Ab4. Bb4 Ab4 Ab5 Ab5 Ab5 Eb5.
+            Bb4 Ab5 Ab5 Eb5. Bb4. Eb5. Ab4. C#5. Bb4. C#5. F5. Ab4. C#5. F5. Bb4.
+            C#5. F5. Ab4 F5. Bb4. F5. Ab5 Ab5 Eb5. Bb4 Ab5 Ab5 Eb5. Bb4. Eb5. Ab4.
+            C#5. Bb4. C#5. F5. Ab4. C#5. F5. Bb4. C#5. F5. Ab4 F5. A4. F5. Bb5 Bb5
+            F5. C5 Bb5 Bb5 F5. C5. F5 Eb5. Bb5. Eb5. F#5. C6 Eb5. Bb5. Eb5. F#5. C6
+            Eb5. Bb5 C#6 C#6 C6 Bb5 F5. C#5. Eb5. F#5 Bb4. F5 F5. C#5. Eb5. F5 C5.
+            Eb5. C#5 Ab5 F5. Ab5. F5. Ab5. F5. Ab5 Ab5 Eb5. Bb4 Ab5 Ab5 Eb5. Bb4.
+            Eb5. Ab4. C#5. Bb4. C#5. F5. Ab4. C#5. F5. Bb4. C#5. F5. Ab4 F5. Bb4.
+            F5. Ab5 Ab5 Eb5. Bb4 Ab5 Ab5 Eb5. Bb4. Eb5. Ab4. C#5. Bb4. C#5. F5. Ab4.
+            C#5. F5. Bb4. C#5. F5. Ab4 F5. A4. F5. Bb5 Bb5 F5. C5 Bb5 Bb5 F5. C5. F5
+            Eb5. Bb5. Eb5. F#5. C6 Eb5. Bb5. Eb5. F#5. C6 Eb5. Bb5 C#6 C#6 C6 Bb5
+            F5. C#5. Eb5. F#5 Bb4. F5 F5. C#5. Eb5. F5 C5. Eb5. C#5 C#5. F5. Ab5.
+            C#6- Ab5 F5 Ab5 F5 Ab5 Bb5. C6 Bb5. Ab5. F5. Eb5. F5 C5-- Eb5. F5. C5.
+            Eb5. F5 C5. Eb5 F5. Bb4-- C#5. F5. Bb4. C#5. F5 C5 Eb5. F5. C5. Eb5. F5
+            C5 Eb5. F5. C5. Eb5. F5 Eb5. Ab5 F5 Ab5 F5 Ab5 Bb5. C6 Bb5. Ab5. F5. Ab5
+            F5 Eb5. Ab5 C5 Eb5. F5. C5. Eb5. F5 Ab4 Bb4. Ab4 Ab4 Bb4. Ab4 Bb4. C5.
+            Ab4. Bb4. C5 Ab4 Bb4. C5. Ab4 Bb4 Eb4. Ab4 Eb5 Eb5 Eb5 Ab5 F5 Ab5 F5 Ab5
+            Bb5. C6 Bb5. Ab5. F5. Eb5. F5 C5-- Eb5. F5. C5. Eb5. F5 C5. Eb5 F5.
+            Bb4-- C#5. F5. Bb4. C#5. F5 C5 Eb5. F5. C5. Eb5. F5 C5 Eb5. F5. C5. Eb5.
+            F5 Eb5. Ab5 F5 Ab5 F5 Ab5 Bb5. C6 Bb5. Ab5. F5. Ab5 F5 Eb5. Ab5 C5 Eb5.
+            F5. C5. Eb5. F5 Ab4 Bb4. Ab4 Ab4 Bb4. Ab4 Bb4. C5. Ab4. Bb4. C5 Ab4 Bb4.
+            C5. Ab4 Bb4 Eb4. Ab4 Eb5 Ab5`,
+  },
+  laDonna: {
+    name: 'La donna è mobile (Verdi, 1851)',
+    notes: `D5. D5. D5. F5. Eb5. C5 C5. C5. C5. Eb5. D5. Bb4 D5. C5. Bb4. C5. A4. A4
+            C5. Bb4. G4. A4. F4. F4 D5. D5. D5. F5. Eb5. C5 C5. C5. C5. Eb5. D5. Bb4
+            D5. C5. Bb4. C5. A4. A4 C5. Bb4. G4. A4. F4. F4 C5. D5. C5. C5. F5. C5
+            D5. Eb5. D5. D5. G5. D5 F5. G5. F5. F5. G5 F5. Eb5. F5. Eb5. D5. C5. Bb4
+            F5. F6. F6 F5. F6. F6 F5. F6. Eb6. F6. Eb6. D6. C6. Bb5 F5. F6. Eb6. A5.
+            F6. Eb6. F5. F6. D6. F5. F6. D6. F5. F6. Eb6. A5. F6. Eb6. A5. F6. Eb6.
+            A5. F6. Bb5 F#5. A5. G5. F5. Eb5. D5. C5. Bb4. Bb5- D5. D5. D5. F5. Eb5.
+            C5 C5. C5. C5. Eb5. D5. Bb4 D5. C5. Bb4. C5. A4. A4 C5. Bb4. G4. A4. F4.
+            F4 D5. D5. D5. F5. Eb5. C5 C5. C5. C5. Eb5. D5. Bb4 D5. C5. Bb4. C5. A4.
+            A4 C5. Bb4. G4. A4. F4. F4 C5. D5. C5. C5. F5. C5 D5. Eb5. D5. D5. G5.
+            D5 F5. G5. F5. F5. G5 F5. Eb5. F5. Eb5. D5. C5. Bb4 F5. F6. F6 F5. F6.
+            F6 F5. F6. Eb6. F6. Eb6. D6. C6. Bb5 F5. F6. Eb6. A5. F6. Eb6. F5. F6.
+            D6. F5. F6. D6. F5. F6. Eb6. A5. F6. Eb6. A5. F6. Eb6. A5. F6. Bb5 F#5.
+            A5. G5. F5. Eb5. D5. C5. Bb4. Bb5.`,
+  },
+  alexander: {
+    name: "Alexander's Ragtime Band (Irving Berlin, 1911)",
+    notes: `Ab4. A4. Ab4. A4- Ab4 A4. Ab4. A4-- A4. Ab4. A4 G4 E4 C4 F4- C#5 D5.
+            C#5. D5- C#5 D5. C#5. D5-- D5. C#5. D5 Bb4 F4 Bb4 D5-- A4. Bb4. C5. C5.
+            D5. A4. C5 D5. A4. C5. C5. D5. A4. C5- F4 A4. C4. F4 A4. C4. F4. F4. A4.
+            C4. F4- G4 G4- A4 B4 G4 A4 B4 C5--- Bb4. A4. G4 Ab4. A4. Ab4. A4- Ab4
+            A4. Ab4. A4-- A4. Ab4. A4 G4 E4 C4 F4- C#5 D5. C#5. D5- C#5 D5. C#5.
+            D5-- D5. C#5. D5 Bb4 F4 Bb4 D5- A4 Bb4. Bb4. C5 C5 C5 A4 G4 F4 A4 G4 F4-
+            F5- D5 F5 B4 C5. B4. C5- B4 C5. B4. C5- D5 C#5 D5 C5 A4 G4 F4- Ab4 A4.
+            Ab4. A4- Ab4 A4. Ab4. A4-- A4. Ab4. A4 G4 E4 C4 F4- C#5 D5. C#5. D5- C#5
+            D5. C#5. D5-- D5. C#5. D5 Bb4 F4 Bb4 D5-- A4. Bb4. C5. C5. D5. A4. C5
+            D5. A4. C5. C5. D5. A4. C5- F4 A4. C4. F4 A4. C4. F4. F4. A4. C4. F4- G4
+            G4- A4 B4 G4 A4 B4 C5--- Bb4. A4. G4 Ab4. A4. Ab4. A4- Ab4 A4. Ab4. A4--
+            A4. Ab4. A4 G4 E4 C4 F4- C#5 D5. C#5. D5- C#5 D5. C#5. D5-- D5. C#5. D5
+            Bb4 F4 Bb4 D5- A4 Bb4. Bb4. C5 C5 C5 A4 G4 F4 A4 G4 F4- F5- D5 F5 B4 C5.
+            B4. C5- B4 C5. B4. C5- D5 C#5 D5 C5 A4 G4 F4- F5.`,
+  },
+  jeanie: {
+    name: 'Jeanie with the Light Brown Hair (Stephen Foster, 1854)',
+    notes: `D5- C5-- A4 Bb4 A4 G4 F4 A4- C4 D4 F4--- F4- G4 A4 F5- D5- C5 A4. G4 F4
+            G4-- D5 C5-- A4 Bb4 A4 G4 F4 A4- C4 D4 F4--- G4 B4 C5 D5 E5 F5 A4 D5 C5-
+            B4 B4 C5- G4 A4 G4 F4 G4- A4 G4 F4 E4 F4 A4 C5--- D5 C5 D5 F5 C5- A4 G4
+            F4- D4 D4. C4-- D5 C5-- A4 Bb4 A4 G4 F4 A4- C4 D4 F4--- G4 A4 F5 D5. C5
+            D5 F4 G4. A4- A4 G4 F4-- D5 C5-- A4 Bb4 A4 G4 F4 A4- C4 D4 F4--- F4- G4
+            A4 F5- D5- C5 A4. G4 F4 G4-- D5 C5-- A4 Bb4 A4 G4 F4 A4- C4 D4 F4--- G4
+            B4 C5 D5 E5 F5 A4 D5 C5- B4 B4 C5- G4 A4 G4 F4 G4- A4 G4 F4 E4 F4 A4
+            C5--- D5 C5 D5 F5 C5- A4 G4 F4- D4 D4. C4-- D5 C5-- A4 Bb4 A4 G4 F4 A4-
+            C4 D4 F4--- G4 A4 F5 D5. C5 D5 F4 G4. A4- A4 G4 F4-`,
+  },
+  lindenbaum: {
+    name: 'Der Lindenbaum (Schubert, 1827)',
+    notes: `B4. B4 Ab4. Ab4. Ab4. Ab4 E4 E4. F#4 Ab4. A4. Ab4. F#4. E4- B4. B4 Ab4.
+            Ab4. Ab4. Ab4 E4 E4. F#4 Ab4. A4. Ab4. F#4. E4- E4. F#4 F#4. F#4. F#4.
+            Ab4 A4. B4 B4. C#5 B4. Ab4. E4. F#4- F#4. F#4 F#4. F#4. F#4. Ab4 A4. B4
+            B4. E5 B4. Ab4. A4 F#4. E4- B4. B4 G4. G4 G4. G4 E4 E4. F#4 G4. A4. G4.
+            F#4. E4- B4. B4 G4. G4. G4. G4 E4 E4. F#4 G4. A4. G4. F#4. E4- E4. F#4
+            F#4. F#4. F#4. Ab4 A4. B4 B4. C#5 B4. Ab4. E4. F#4- F#4. F#4 F#4. F#4.
+            F#4. Ab4 A4. B4 B4. E5 B4. Ab4. A4 F#4. E4- F#4. F#4 F#4. F#4. A4. Ab4
+            E4 E4. F#4 F#4. B4 A4. G4- B4. C5 B4. C5. B4. C5 C4 C4. C#4 C#4. C#4.
+            C#4. B3- B4. B4 Ab4. Ab4. Ab4. Ab4 E4 E4. F#4 Ab4. A4. Ab4. F#4. E4- B4.
+            B4 Ab4. Ab4. Ab4. Ab4 E4 E4. F#4 Ab4. A4. Ab4. F#4. E4- E4. F#4 F#4.
+            F#4. F#4. Ab4 A4. B4 B4. C#5 B4. Ab4. E4. F#4- F#4. F#4 F#4. F#4. F#4.
+            Ab4 A4. B4 B4. E5 B4. Ab4. A4. F#4. B4- B4. E5 B4. Ab4. B4. A4. F#4. E4-`,
+  },
 };
-// Only full-length pieces (100+ notes) are kept, so the tune doesn't loop
-// every few seconds on a big cube.
+// Only full-length pieces (100+ notes) are kept, no excerpts, so the tune
+// doesn't loop every few seconds on a big cube.
 const PLAYLIST = Object.keys(SONGS);
 
 const ROOT = 523.25; // C5
