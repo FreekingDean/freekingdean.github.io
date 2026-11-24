@@ -20,6 +20,7 @@ Plain static HTML/CSS/JS, no build step. Keep links relative (`hello/`, `../styl
 `.github/workflows/deploy.yml` publishes to the `gh-pages` branch:
 
 - Merging to `main` deploys the live site.
-- Each PR gets a preview at `https://freekingdean.github.io/pr-preview/pr-<N>/`, removed when the PR closes.
+- Each PR gets a preview at `https://freekingdean.github.io/pr-preview/pr-<N>/`, with a banner linking back to the live site.
+- After every deploy, `.github/scripts/sync_pages.py` rewrites the "In the works" list on the live homepage from the open PRs, and deletes the preview folder of any PR that is no longer open.
 
 One-time setting: **Settings → Pages → Build and deployment → Source: Deploy from a branch → `gh-pages` / `(root)`**.
