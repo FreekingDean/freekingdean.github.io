@@ -44,8 +44,10 @@
         <a class="prs-all" href="https://github.com/FreekingDean/freekingdean.github.io/pulls">all PRs on GitHub</a>
       </div>
       <p class="prs-intro">Open pull requests, each with a live preview.</p>
-      <ul class="pr-list" id="pr-list" aria-live="polite">
-        <li class="pr-status">Loading open PRs…</li>
+      <ul class="pr-list" id="pr-list">
+        <!-- pr-list:start (filled in by .github/scripts/sync_pages.py on deploy) -->
+        <li class="pr-status">The PR list is built on the live site.</li>
+        <!-- pr-list:end -->
       </ul>
     </section>
   </main>
@@ -53,6 +55,5 @@
   <footer>
     <p>Made for fun · <a href="https://github.com/FreekingDean/freekingdean.github.io">source</a></p>
   </footer>
-  <script src="prs.js" defer></script>
 </body>
 </html>
