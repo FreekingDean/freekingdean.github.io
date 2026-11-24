@@ -742,6 +742,11 @@ heartsToggle.addEventListener('change', () => {
   if (state) { state.lives = state.maxLives; updateHud(); }
 });
 
+const songSelect = $('songSelect');
+for (const song of sfx.songs) songSelect.add(new Option(song.name, song.id));
+songSelect.value = sfx.currentSong();
+songSelect.addEventListener('change', () => sfx.setSong(songSelect.value));
+
 const soundButton = $('btnSound');
 const showSound = (m) => { soundButton.textContent = m ? '🔇' : '🔊'; soundButton.setAttribute('aria-label', m ? 'Turn sound on' : 'Turn sound off'); };
 let muted = store.get('muted', false);
