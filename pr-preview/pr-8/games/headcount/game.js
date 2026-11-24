@@ -9,6 +9,14 @@
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
+  const fmt = (n) => {
+    n = Math.round(n);
+    const a = Math.abs(n);
+    if (a < 10000) return n.toLocaleString();
+    if (a < 1e6) return (n / 1000).toFixed(a < 1e5 ? 1 : 0) + "k";
+    if (a < 1e9) return (n / 1e6).toFixed(a < 1e7 ? 2 : 1) + "M";
+    return (n / 1e9).toFixed(1) + "B";
+  };
   const store = {
     get(k, d) { try { const v = localStorage.getItem("headcount." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
     set(k, v) { try { localStorage.setItem("headcount." + k, JSON.stringify(v)); } catch { /* private mode */ } },
@@ -95,9 +103,12 @@
   let fireTimer = 0;
   let shake = 0, flash = 0, flashColor = "#fff";
   let clashTimer = 0;
+  let statsBump = 0;
   let L = 200;
   let gates = [], crates = [], mobs = [], saws = [], pickups = [], bullets = [], particles = [], popups = [], confetti = [];
   let boss = null;
+  let minis = [];
+  const gun = { dmg: 1, rate: 1, guns: 0 };
   let deco = [];
 
   const ui = {
@@ -121,70 +132,147 @@
   updateStats();
 
   // ---------- gates ----------
-  // op: "+" (val may be negative), "x", "/"
+  // Math ops: "+" (val may be negative), "x", "/". Upgrade ops: "dmg", "dmgx", "rate", "gun".
+  const UPGRADE_OPS = new Set(["dmg", "dmgx", "rate", "gun"]);
   function applyOp(op, val, n) {
     if (op === "+") return Math.max(0, n + val);
     if (op === "x") return n * val;
-    return Math.floor(n / val);
+    if (op === "/") return Math.floor(n / val);
+    return n;
   }
   function opLabel(op, val) {
-    if (op === "+") return val >= 0 ? "+" + val : "−" + Math.abs(val);
+    if (op === "+") return val >= 0 ? "+" + fmt(val) : "−" + fmt(Math.abs(val));
     if (op === "x") return "×" + val;
-    return "÷" + val;
+    if (op === "/") return "÷" + val;
+    if (op === "dmg") return "💥+" + fmt(val);
+    if (op === "dmgx") return "💥×" + val;
+    if (op === "rate") return "🔥+" + val + "%";
+    return "🎯+" + val;
   }
-  const isGood = (side) => (side.op === "+" && side.val > 0) || side.op === "x";
+  const isUpgrade = (side) => UPGRADE_OPS.has(side.op);
+  const isGood = (side) => isUpgrade(side) ? !(side.lock > 0) : (side.op === "+" && side.val > 0) || side.op === "x";
+  function sideAt(g, x) {
+    for (let i = 0; i < g.sides.length; i++) if (x < g.sides[i].x1) return i;
+    return g.sides.length - 1;
+  }
+  function makeRow(z, sides, small = false) {
+    const n = sides.length, w = (ROAD * 2) / n;
+    sides.forEach((sd, i) => { sd.x0 = -ROAD + i * w; sd.x1 = -ROAD + (i + 1) * w; sd.prog = 0; sd.bump = 0; sd.lockMax = sd.lock || 0; });
+    gates.push({ z, sides, small, passed: false, chosen: -1, t: 0 });
+  }
+  const mathSide = (op, val, shoot = false) => ({ op, val, shoot });
 
   // ---------- level generation ----------
   function buildLevel() {
-    gates = []; crates = []; mobs = []; saws = []; pickups = []; bullets = []; particles = []; popups = []; confetti = [];
-    L = 190 + Math.min(level, 12) * 22;
-    let est = 6; // rough guess of how big the crowd is at this point
-    let z = 18;
-    let i = 0;
+    gates = []; crates = []; mobs = []; saws = []; pickups = []; bullets = []; particles = []; popups = []; confetti = []; minis = [];
+    L = 230 + Math.min(level, 12) * 25;
     const lv = level;
+    let est = 6; // rough guess of how big the crowd is at this point
+    let pow = 1; // rough guess of how hard it hits (damage × fire rate × guns)
+    let z = 16;
+    let i = 0;
+    const miniAt = [0.36, 0.7].concat(lv >= 4 ? [0.53] : []).map((f) => f * L).sort((a, b) => a - b);
     while (z < L - 26) {
+      if (miniAt.length && z >= miniAt[0]) {
+        miniAt.shift();
+        const hp = Math.round((22 + est * 1.6 + lv * 10) * pow);
+        minis.push(makeMini(z + 6, hp, lv));
+        est *= 0.85; pow *= 1.35;
+        z += 20;
+        continue;
+      }
       const roll = Math.random();
       let kind;
       if (i < 2) kind = "gate";
-      else if (roll < 0.38) kind = "gate";
-      else if (roll < 0.56) kind = "mob";
-      else if (roll < 0.72) kind = "crate";
-      else if (roll < 0.86) kind = "saw";
+      else if (i === 2) kind = "gauntlet";
+      else if (roll < 0.2) kind = "gate";
+      else if (roll < 0.34) kind = "gauntlet";
+      else if (roll < 0.46) kind = "upgrade";
+      else if (roll < 0.68) kind = "mob";
+      else if (roll < 0.8) kind = "crate";
+      else if (roll < 0.9) kind = "saw";
       else kind = "pickup";
+
       if (kind === "gate") {
         const good = makeGoodGate(est, lv);
         const bad = makeBadGate(est, lv);
-        const sides = Math.random() < 0.5 ? [good, bad] : [bad, good];
-        gates.push({ z, sides, passed: false, chosen: -1, t: 0 });
+        makeRow(z, Math.random() < 0.5 ? [good, bad] : [bad, good]);
         est = Math.max(3, applyOp(good.op, good.val, est) * 0.8 + applyOp(bad.op, Math.max(bad.val, 0), est) * 0.2);
-        z += rand(15, 19);
+        z += rand(12, 15);
+      } else if (kind === "gauntlet") {
+        // a quick run of small gates, one after another
+        const rows = randi(4, 6 + Math.min(4, lv));
+        const lanes = pick([2, 3, 3, 4]);
+        const big = Math.max(2, Math.round(2 + est * 0.12));
+        for (let r = 0; r < rows; r++) {
+          const sides = [];
+          for (let k = 0; k < lanes; k++) {
+            const q = Math.random();
+            if (q < 0.12 && r > 0) sides.push(mathSide("x", 2));
+            else if (q < 0.6) sides.push(mathSide("+", randi(1, big)));
+            else sides.push(mathSide("+", -randi(1, Math.max(1, Math.round(big * 0.8))), true));
+          }
+          if (!sides.some((sd) => isGood(sd))) sides[randi(0, lanes - 1)] = mathSide("+", randi(1, big));
+          makeRow(z, sides, true);
+          const vals = sides.map((sd) => applyOp(sd.op, sd.val, est));
+          est = Math.max(3, Math.max(...vals) * 0.7 + (vals.reduce((a, b) => a + b, 0) / lanes) * 0.3);
+          z += 3.2;
+        }
+        z += rand(9, 12);
+      } else if (kind === "upgrade") {
+        const up = makeUpgrade(pow, lv, true);
+        const other = Math.random() < 0.5 ? makeGoodGate(est, lv) : makeUpgrade(pow, lv, false);
+        makeRow(z, Math.random() < 0.5 ? [up, other] : [other, up]);
+        pow *= 1.25;
+        if (!isUpgrade(other)) est = Math.max(3, applyOp(other.op, other.val, est) * 0.5 + est * 0.5);
+        z += rand(13, 16);
       } else if (kind === "mob") {
-        const count = Math.max(2, Math.round(est * rand(0.25, 0.45) + lv));
-        const x = Math.random() < 0.4 ? 0 : rand(-0.55, 0.55);
-        mobs.push(makeMob(x, z + 4, count));
-        est = Math.max(3, est - count * 0.6);
-        z += rand(16, 20);
+        const pattern = Math.random();
+        if (pattern < 0.3) {
+          // rushing wave: several small crowds sprinting in quick succession
+          const waves = randi(3, 4 + Math.min(2, Math.floor(lv / 3)));
+          for (let k = 0; k < waves; k++) {
+            const count = Math.max(2, Math.round(est * rand(0.1, 0.2) * Math.sqrt(pow) + lv));
+            mobs.push(makeMob(rand(-0.5, 0.5), z + 5 + k * 3.5, count, 4.5));
+            est = Math.max(3, est - count * 0.4);
+          }
+          z += 14 + waves * 3.5;
+        } else if (pattern < 0.55) {
+          // two crowds side by side
+          for (const x of [-0.5, 0.5]) {
+            const count = Math.max(2, Math.round(est * rand(0.3, 0.5) * Math.sqrt(pow) + lv * 2));
+            mobs.push(makeMob(x, z + 5, count));
+          }
+          est = Math.max(3, est * 0.75);
+          z += rand(16, 19);
+        } else {
+          const count = Math.max(3, Math.round(est * rand(0.4, 0.75) * Math.sqrt(pow) + lv * 2));
+          mobs.push(makeMob(Math.random() < 0.5 ? 0 : rand(-0.5, 0.5), z + 5, count));
+          est = Math.max(3, est - count * 0.5);
+          z += rand(15, 18);
+        }
       } else if (kind === "crate") {
         const n = Math.random() < 0.5 ? 1 : 2;
         const xs = n === 1 ? [rand(-0.6, 0.6)] : [-0.55, 0.55];
         for (const x of xs) {
-          const hp = Math.max(3, Math.round(4 + est * 0.12 + lv * 1.5));
-          crates.push({ x, z: z + 2, hp, max: hp, w: 0.3, hit: 0, drop: pick(["rapid", "spread", "shield", "plus", "plus"]) });
+          const hp = Math.max(3, Math.round((5 + est * 0.1 + lv * 2) * pow));
+          crates.push({ x, z: z + 2, hp, max: hp, w: 0.3, hit: 0, drop: pick(["rapid", "spread", "shield", "plus", "dmg", "rate", "gun", "dmg"]) });
         }
-        z += rand(13, 16);
+        pow *= 1.1;
+        z += rand(11, 14);
       } else if (kind === "saw") {
         const n = Math.random() < 0.35 + lv * 0.03 ? 2 : 1;
         for (let k = 0; k < n; k++) {
           saws.push({ z: z + 2 + k * 4, amp: rand(0.45, 0.8), freq: rand(1.1, 1.8) + lv * 0.05, phase: rand(0, 6.28), r: 0.2, x: 0 });
         }
-        z += 12 + n * 3;
+        z += 11 + n * 3;
       } else {
-        pickups.push({ x: rand(-0.6, 0.6), z: z + 2, type: pick(["rapid", "spread", "shield", "plus"]), t: rand(0, 6) });
-        z += rand(9, 12);
+        pickups.push({ x: rand(-0.6, 0.6), z: z + 2, type: pick(["rapid", "spread", "shield", "plus", "dmg"]), t: rand(0, 6) });
+        z += rand(8, 11);
       }
       i++;
     }
-    const hp = Math.round(80 + est * 6 + lv * 30);
+    const hp = Math.round((70 + est * 4 + lv * 30) * pow);
     boss = { z: L + 3, hp, max: hp, hit: 0, t: 0, nextSlam: 2.2, slam: null, dead: false, deadT: 0, wobble: 0 };
 
     deco = [];
@@ -195,21 +283,43 @@
   }
   function makeGoodGate(est, lv) {
     const r = Math.random();
-    if (r < 0.32 && est > 3) return { op: "x", val: est < 30 && Math.random() < 0.3 ? 3 : 2, shoot: false, prog: 0, bump: 0 };
-    const v = Math.max(2, Math.round(est * rand(0.4, 0.9) + rand(2, 6)));
-    return { op: "+", val: v, shoot: false, prog: 0, bump: 0 };
+    if (r < 0.4 && est > 3) {
+      const opts = [2, 2, 3];
+      if (lv >= 2 || est > 40) opts.push(3, 4);
+      if (lv >= 4) opts.push(5);
+      return mathSide("x", pick(opts));
+    }
+    return mathSide("+", Math.max(3, Math.round(est * rand(0.6, 1.3) + rand(3, 8) + lv * 2)));
   }
   function makeBadGate(est, lv) {
     const r = Math.random();
-    // Shootable red gate: starts negative, climbs one step per few hits.
-    if (r < 0.5) return { op: "+", val: -Math.max(3, Math.round(est * rand(0.25, 0.5) + lv)), shoot: true, prog: 0, bump: 0 };
-    if (r < 0.75 && est > 8) return { op: "/", val: Math.random() < 0.7 ? 2 : 3, shoot: false, prog: 0, bump: 0 };
-    return { op: "+", val: -Math.max(2, Math.round(est * rand(0.3, 0.6))), shoot: false, prog: 0, bump: 0 };
+    // Shootable red gate: starts negative, climbs as you shoot it.
+    if (r < 0.5) return mathSide("+", -Math.max(3, Math.round(est * rand(0.25, 0.5) + lv)), true);
+    if (r < 0.75 && est > 8) return mathSide("/", pick([2, 2, 3, lv >= 3 ? 4 : 2]));
+    return mathSide("+", -Math.max(2, Math.round(est * rand(0.3, 0.6))));
   }
-  function makeMob(x, z, count) {
-    const m = { x, z, count, members: [], R: 0, alive: true, walking: false };
+  function makeUpgrade(pow, lv, locked) {
+    const r = Math.random();
+    let sd;
+    if (r < 0.35) sd = { op: "dmg", val: Math.max(1, Math.round(pow * rand(0.6, 1.2))) };
+    else if (r < 0.5) sd = { op: "dmgx", val: 2 };
+    else if (r < 0.75) sd = { op: "rate", val: pick([25, 30, 40, 50]) };
+    else sd = { op: "gun", val: pick([1, 1, 2]) };
+    if (locked) sd.lock = Math.round((8 + lv * 3) * pow * rand(0.8, 1.2));
+    return sd;
+  }
+  function makeMob(x, z, count, speed = 1.6) {
+    const m = { x, z, count, members: [], R: 0, alive: true, walking: false, speed };
     syncMembers(m.members, Math.min(count, 120), true);
     return m;
+  }
+  function makeMini(z, hp, lv) {
+    const kinds = [
+      { name: "BRUTE", c1: "#ff9d5c", c2: "#d9481f", horn: "#fff2d6" },
+      { name: "BULK", c1: "#7fe08a", c2: "#2f9a4a", horn: "#f6f1d0" },
+      { name: "SPIKE", c1: "#ff7aa8", c2: "#c2306b", horn: "#ffe7f0" },
+    ];
+    return { x: 0, z, hp, max: hp, R: 0.55, alive: true, hit: 0, walking: false, kind: pick(kinds), acc: 0, deadT: 0 };
   }
 
   // ---------- crowd members ----------
@@ -291,6 +401,7 @@
     buildLevel();
     crowd.x = 0; crowd.targetX = 0; crowd.z = 0; crowd.members = []; crowd.speed = BASE_SPEED;
     power.rapid = power.spread = power.shield = 0;
+    gun.dmg = 1; gun.rate = 1; gun.guns = 0;
     setCount(5);
     for (const m of crowd.members) { const s = formationSlot(crowd.members.indexOf(m)); m.x = s.x; m.z = s.z; m.pop = 0; }
     state = "run";
@@ -303,6 +414,7 @@
     shake = Math.max(0, shake - dt * 3);
     flash = Math.max(0, flash - dt * 2.5);
     crowd.labelBump = Math.max(0, crowd.labelBump - dt * 4);
+    statsBump = Math.max(0, statsBump - dt * 3);
 
     updateParticles(dt);
     if (state === "menu") { camZ = -CAM_BACK + Math.sin(time * 0.3) * 0.5; return; }
@@ -325,7 +437,13 @@
       crowd.speed = lerp(crowd.speed, speed, 1 - Math.exp(-dt * 8));
       const prevZ = crowd.z;
       crowd.z += crowd.speed * dt;
-      if (state === "run" && crowd.z >= L - 4) { crowd.z = L - 4; state = "boss"; boss.t = 0; sound.thud(); shake = 0.6; }
+      if (state === "run" && crowd.z >= L - 4) {
+        crowd.z = L - 4; state = "boss"; boss.t = 0; sound.thud(); shake = 0.6;
+        // the grump bulks up to match you, so the finale is always a real fight
+        const dps = (gunsPerVolley() * dmgNow() * gun.rate) / 0.13;
+        boss.hp = boss.max = Math.round(Math.max(boss.hp, boss.hp * 0.3 + dps * 5));
+        popup(0, 2.6, boss.z, "GRUMP " + fmt(boss.hp), "#b07cff", 1.3);
+      }
 
       // members settle into formation
       const ms = crowd.members;
@@ -341,6 +459,7 @@
       updateGates(prevZ);
       updateCrates();
       updateMobs(dt);
+      updateMinis(dt);
       updateSaws(dt);
       updatePickups(dt);
       if (state === "boss") updateBoss(dt);
@@ -357,29 +476,34 @@
     ui.progress.style.width = clamp(crowd.z / (L - 4), 0, 1) * 100 + "%";
   }
 
+  const dmgNow = () => Math.max(1, Math.round(gun.dmg * (1 + crowd.count / 500)));
+  const gunsPerVolley = () => Math.min(1 + Math.floor(Math.sqrt(crowd.count) * 0.9), 11) + gun.guns;
   function shoot(dt) {
     fireTimer -= dt;
     if (fireTimer > 0 || crowd.count <= 0) return;
-    fireTimer += power.rapid > 0 ? 0.065 : 0.13;
+    fireTimer += (power.rapid > 0 ? 0.065 : 0.13) / gun.rate;
     if (fireTimer < 0) fireTimer = 0;
-    let n = Math.min(1 + Math.floor(Math.sqrt(crowd.count) * 0.9), 11);
+    const n = gunsPerVolley();
+    const dmg = dmgNow();
     const spread = power.spread > 0;
-    const w = Math.max(0.02, crowd.R * 0.75);
+    const w = Math.max(0.02, crowd.R * 0.75 + Math.min(0.25, gun.guns * 0.03));
     const front = crowd.z + crowd.R * 1.2;
     for (let i = 0; i < n; i++) {
       const t = n === 1 ? 0 : i / (n - 1) - 0.5;
-      bullets.push({ x: crowd.x + t * 2 * w + rand(-0.02, 0.02), z: front, vx: spread ? t * 1.2 : 0, life: 0.75 });
+      bullets.push({ x: crowd.x + t * 2 * w + rand(-0.02, 0.02), z: front, vx: spread ? t * 1.2 : 0, life: 0.75, dmg });
       if (spread) {
-        bullets.push({ x: crowd.x + t * 2 * w, z: front, vx: -1.4 + t, life: 0.7 });
-        bullets.push({ x: crowd.x + t * 2 * w, z: front, vx: 1.4 + t, life: 0.7 });
+        bullets.push({ x: crowd.x + t * 2 * w, z: front, vx: -1.4 + t, life: 0.7, dmg });
+        bullets.push({ x: crowd.x + t * 2 * w, z: front, vx: 1.4 + t, life: 0.7, dmg });
       }
     }
+    if (bullets.length > 700) bullets.splice(0, bullets.length - 700);
     sound.shot(time);
   }
-  function bulletsPerVolley() { return Math.min(1 + Math.floor(Math.sqrt(crowd.count) * 0.9), 11) * (power.spread > 0 ? 3 : 1) * (power.rapid > 0 ? 2 : 1); }
+  function bulletsPerVolley() { return gunsPerVolley() * (power.spread > 0 ? 3 : 1) * (power.rapid > 0 ? 2 : 1) * gun.rate; }
 
   function updateBullets(dt) {
     const hitCost = Math.max(1, bulletsPerVolley() * 0.45);
+    const step = Math.max(1, Math.round(Math.sqrt(dmgNow())));
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       const z0 = b.z;
@@ -389,46 +513,73 @@
       // gates (unpassed) absorb bullets
       for (const g of gates) {
         if (g.passed || g.z < z0 || g.z > b.z) continue;
-        const side = g.sides[b.x < 0 ? 0 : 1];
-        if (side.shoot) {
+        const idx = sideAt(g, b.x), side = g.sides[idx];
+        const mid = (side.x0 + side.x1) / 2;
+        if (side.lock > 0) {
+          side.lock -= b.dmg; side.bump = 0.6;
+          if (side.lock <= 0) { side.lock = 0; sound.power(); popup(mid, 1.6, g.z, "unlocked!", "#ffd23f", 0.9); burst(mid, 0.8, g.z, "#ffd23f", 20, 3); }
+          else if (Math.random() < 0.15) sound.tick();
+        } else if (side.shoot && side.op === "+") {
           side.prog += 1 / hitCost;
           while (side.prog >= 1) {
-            side.prog -= 1; side.val += 1; side.bump = 1;
-            if (side.val === 1) { sound.good(); popup(b.x < 0 ? -0.5 : 0.5, 1.6, g.z, "flipped!", "#2f7cf6", 0.8); }
-            else sound.tick();
+            side.prog -= 1;
+            const was = side.val;
+            side.val += step; side.bump = 1;
+            if (was <= 0 && side.val > 0) { sound.good(); popup(mid, 1.6, g.z, "flipped!", "#2f7cf6", 0.8); }
+            else if (Math.random() < 0.5) sound.tick();
           }
         }
-        burst(b.x, 0.7, g.z - 0.05, side.shoot ? "#ffe066" : "#ffffff", 2, 1.2);
+        burst(b.x, g.small ? 0.4 : 0.7, g.z - 0.05, side.shoot || side.lock ? "#ffe066" : "#ffffff", 2, 1.2);
         hit = true; break;
       }
       if (!hit) for (const c of crates) {
         if (c.hp <= 0 || Math.abs(b.x - c.x) > c.w || b.z < c.z - c.w || z0 > c.z + c.w) continue;
-        c.hp--; c.hit = 1;
+        c.hp = Math.max(0, c.hp - b.dmg); c.hit = 1;
         burst(b.x, 0.4, c.z - c.w, "#c98a4b", 2, 1.5);
         if (c.hp <= 0) breakCrate(c);
+        hit = true; break;
+      }
+      if (!hit) for (const m of minis) {
+        if (!m.alive || Math.abs(b.x - m.x) > m.R || b.z < m.z - m.R * 0.6 || z0 > m.z + m.R) continue;
+        m.hp -= b.dmg; m.hit = 1; m.walking = true;
+        burst(b.x, rand(0.3, 1), m.z - m.R * 0.6, "#ffd23f", 2, 2);
+        if (m.hp <= 0) killMini(m);
         hit = true; break;
       }
       if (!hit) for (const m of mobs) {
         if (!m.alive || m.count <= 0) continue;
         const front = m.z - m.R * 1.25;
         if (b.z < front || z0 > m.z + m.R || Math.abs(b.x - m.x) > m.R + 0.04) continue;
-        m.count--; m.walking = true;
-        if (m.members.length > m.count) {
+        const k = Math.min(m.count, b.dmg);
+        m.count -= k; m.walking = true;
+        for (let q = 0; q < k && m.members.length > m.count; q++) {
           const mm = m.members.pop();
-          if (mm) burst(m.x + mm.x, 0.15, m.z + mm.z, "#e5484d", 5, 1.5);
+          if (mm && q < 3) burst(m.x + mm.x, 0.15, m.z + mm.z, "#e5484d", 5, 1.5);
         }
         if (Math.random() < 0.3) sound.pop();
         if (m.count <= 0) { m.alive = false; popup(m.x, 0.8, m.z, "cleared", "#ffffff", 0.8); }
         hit = true; break;
       }
       if (!hit && boss && !boss.dead && state === "boss" && b.z >= boss.z - 0.9) {
-        boss.hp -= 1; boss.hit = 1;
+        boss.hp -= b.dmg; boss.hit = 1;
         burst(b.x, rand(0.4, 1.6), boss.z - 0.8, "#ffd23f", 2, 2);
         if (boss.hp <= 0) win();
         hit = true;
       }
       if (hit) bullets.splice(i, 1);
     }
+  }
+
+  function applyUpgrade(op, val, x, z) {
+    let text;
+    if (op === "dmg") { gun.dmg += val; text = `💥 Damage +${val}`; }
+    else if (op === "dmgx") { gun.dmg *= val; text = `💥 Damage ×${val}`; }
+    else if (op === "rate") { gun.rate = Math.min(5, gun.rate * (1 + val / 100)); text = `🔥 Fire rate +${val}%`; }
+    else { gun.guns = Math.min(12, gun.guns + val); text = `🎯 +${val} gun${val > 1 ? "s" : ""}`; }
+    popup(x, 1.5, z, text, "#ffd23f", 1.1);
+    sound.power(); buzz(20);
+    flash = 0.3; flashColor = "rgba(255,210,63,0.5)";
+    statsBump = 1;
   }
 
   function updateGates(prevZ) {
@@ -438,18 +589,55 @@
       if (g.passed) { g.t += 1 / 60; continue; }
       if (prevZ < g.z && front >= g.z) {
         g.passed = true;
-        const idx = crowd.x < 0 ? 0 : 1;
+        const idx = sideAt(g, crowd.x);
         g.chosen = idx;
         const side = g.sides[idx];
+        const mid = (side.x0 + side.x1) / 2;
+        if (isUpgrade(side)) {
+          if (side.lock > 0) { popup(crowd.x, 1.3, crowd.z + 0.6, "🔒 still locked", "#ffffff", 0.9); sound.bad(); }
+          else applyUpgrade(side.op, side.val, crowd.x, crowd.z + 0.6);
+          burst(mid, 0.9, g.z, "#ffd23f", 20, 3);
+          continue;
+        }
         const before = crowd.count;
         const after = applyOp(side.op, side.val, before);
         setCount(after);
         const diff = after - before;
         const good = diff >= 0;
-        popup(crowd.x, 1.3, crowd.z + 0.6, (good ? "+" : "−") + Math.abs(diff).toLocaleString(), good ? "#2f7cf6" : "#e5484d", 1.4);
-        flash = 0.35; flashColor = good ? "rgba(80,150,255,0.6)" : "rgba(229,72,77,0.6)";
-        if (good) { sound.good(); buzz(15); } else { sound.bad(); shake = 0.5; buzz([30, 30, 30]); }
-        burst(idx === 0 ? -0.5 : 0.5, 0.9, g.z, good ? "#7fb2ff" : "#ff8a8d", 26, 3);
+        popup(crowd.x, g.small ? 1.0 : 1.3, crowd.z + 0.6, (good ? "+" : "−") + fmt(Math.abs(diff)), good ? "#2f7cf6" : "#e5484d", g.small ? 1 : 1.4);
+        flash = g.small ? 0.15 : 0.35; flashColor = good ? "rgba(80,150,255,0.6)" : "rgba(229,72,77,0.6)";
+        if (good) { if (g.small) sound.tick(); else sound.good(); buzz(10); }
+        else { if (g.small) sound.pop(); else sound.bad(); shake = g.small ? 0.2 : 0.5; buzz(g.small ? 15 : [30, 30, 30]); }
+        burst(mid, g.small ? 0.5 : 0.9, g.z, good ? "#7fb2ff" : "#ff8a8d", g.small ? 10 : 26, 3);
+      }
+    }
+  }
+
+  function killMini(m) {
+    m.alive = false; m.hp = 0;
+    sound.thud(); sound.win(); shake = 0.8; buzz([40, 30, 60]);
+    burst(m.x, 0.8, m.z, m.kind.c1, 50, 5);
+    burst(m.x, 0.8, m.z, "#ffd23f", 30, 4);
+    popup(m.x, 1.8, m.z, m.kind.name + " DOWN!", "#ffd23f", 1.4);
+    const drops = ["dmg", pick(["rate", "gun"]), pick(["plus", "spread", "rapid"])];
+    drops.forEach((t, k) => pickups.push({ x: (k - 1) * 0.5, z: m.z - 0.5, type: t, t: 0 }));
+  }
+  function updateMinis(dt) {
+    for (const m of minis) {
+      if (!m.alive) { m.deadT += dt; continue; }
+      m.hit = Math.max(0, m.hit - dt * 6);
+      const dist = m.z - crowd.z;
+      if (dist < 22) m.walking = true;
+      const gap = (m.z - m.R * 0.6) - (crowd.z + crowd.R * 1.25);
+      if (m.walking && gap > 0) m.z -= 1.3 * dt;
+      m.x = lerp(m.x, clamp(crowd.x, -0.4, 0.4), dt * 0.8);
+      if (gap < 0.05) {
+        clashTimer = 0.15;
+        if (crowd.z > m.z - m.R * 0.6 - crowd.R * 1.25) crowd.z = Math.max(crowd.z - 0.02, m.z - m.R * 0.6 - crowd.R * 1.25);
+        m.acc += dt * (6 + level * 1.5 + crowd.count * 0.04);
+        if (power.shield > 0) m.acc = 0;
+        while (m.acc >= 1 && crowd.count > 0) { m.acc -= 1; loseMembers(1, "#3d7bf2"); if (Math.random() < 0.3) sound.pop(); }
+        shake = Math.max(shake, 0.2);
       }
     }
   }
@@ -485,7 +673,7 @@
       m.R = radiusFor(m.count) * 0.95;
       const dist = m.z - crowd.z;
       if (dist < 24) m.walking = true;
-      if (m.walking) m.z -= 1.6 * dt;
+      if (m.walking) m.z -= m.speed * dt;
       syncMembers(m.members, Math.min(m.count, 120), true);
       for (let i = 0; i < m.members.length; i++) {
         const s = formationSlot(i), mm = m.members[i];
@@ -534,6 +722,9 @@
     spread: { icon: "🔱", name: "Spread shot", dur: 6, color: "#b46cff" },
     shield: { icon: "🛡️", name: "Shield", dur: 5, color: "#43d9a3" },
     plus: { icon: "➕", name: "", dur: 0, color: "#2f7cf6" },
+    dmg: { icon: "💥", name: "", dur: 0, color: "#ff8a3d" },
+    rate: { icon: "🔥", name: "", dur: 0, color: "#ff5a36" },
+    gun: { icon: "🎯", name: "", dur: 0, color: "#e4572e" },
   };
   function updatePickups(dt) {
     for (let i = pickups.length - 1; i >= 0; i--) {
@@ -548,7 +739,10 @@
           setCount(crowd.count + add);
           popup(crowd.x, 1.3, crowd.z + 0.6, "+" + add, "#2f7cf6", 1.2);
           sound.good();
-        } else {
+        } else if (p.type === "dmg") applyUpgrade("dmg", Math.max(1, Math.round(gun.dmg * 0.5)), crowd.x, crowd.z + 0.6);
+        else if (p.type === "rate") applyUpgrade("rate", 25, crowd.x, crowd.z + 0.6);
+        else if (p.type === "gun") applyUpgrade("gun", 1, crowd.x, crowd.z + 0.6);
+        else {
           power[p.type] = info.dur;
           popup(crowd.x, 1.4, crowd.z + 0.6, info.icon + " " + info.name, info.color, 1);
           sound.power();
@@ -638,7 +832,7 @@
     sound.lose(); buzz(120);
     const pct = Math.round(clamp(crowd.z / (L - 4), 0, 1) * 100);
     document.getElementById("loseText").textContent = state === "lost" && boss && crowd.z >= L - 4.5
-      ? `The grump had ${Math.max(0, boss.hp)} HP left. Pick up more people on the way.`
+      ? `The grump had ${fmt(Math.max(0, Math.ceil(boss.hp)))} HP left. Pick up more people on the way.`
       : `Everybody's gone, ${pct}% of the way there.`;
     setTimeout(() => show(ui.lose, true), 700);
   }
@@ -707,58 +901,70 @@
     ctx.beginPath(); ctx.arc(p.x - r * 0.25, y - r * 3.05, r * 0.22, 0, Math.PI * 2); ctx.fill();
   }
 
+  const PALETTE = {
+    good: ["rgba(90,160,255,0.95)", "rgba(47,124,246,0.55)", "#1e5ed6", "#163f91"],
+    bad: ["rgba(255,95,100,0.95)", "rgba(229,72,77,0.55)", "#a8262c", "#7a1a1e"],
+    gold: ["rgba(255,214,80,0.97)", "rgba(240,160,30,0.6)", "#b7791f", "#7a4a0c"],
+    locked: ["rgba(150,150,160,0.95)", "rgba(90,90,100,0.6)", "#55555f", "#2d2d35"],
+  };
   function drawGate(g) {
     const fade = g.passed ? Math.max(0, 1 - g.t * 3) : 1;
     if (fade <= 0) return;
-    for (let i = 0; i < 2; i++) {
+    const H0 = g.small ? 0.62 : 1.25;
+    for (let i = 0; i < g.sides.length; i++) {
       const s = g.sides[i];
-      const x0 = i === 0 ? -ROAD + 0.04 : 0.04, x1 = i === 0 ? -0.04 : ROAD - 0.04;
+      const x0 = s.x0 + 0.04, x1 = s.x1 - 0.04;
       const bump = s.bump * 0.08;
-      const top = 1.25 + bump, bot = 0.05;
-      const a = proj(x0 - bump, top, g.z), b = proj(x1 + bump, top, g.z), c = proj(x1 + bump, bot, g.z), d = proj(x0 - bump, bot, g.z);
+      const top = H0 + bump, bot = 0.05;
+      const a = proj(x0 - bump, top, g.z), b = proj(x1 + bump, top, g.z), c = proj(x1 + bump, bot, g.z);
       if (!a || !c) continue;
-      const good = isGood(s);
+      const up = isUpgrade(s);
+      const pal = up ? (s.lock > 0 ? PALETTE.locked : PALETTE.gold) : isGood(s) ? PALETTE.good : PALETTE.bad;
       const chosen = g.passed && g.chosen === i;
-      ctx.globalAlpha = fade * (chosen ? 0.9 : 0.62);
+      ctx.globalAlpha = fade * (chosen ? 0.9 : 0.66);
       const grad = ctx.createLinearGradient(0, a.y, 0, c.y);
-      grad.addColorStop(0, good ? "rgba(90,160,255,0.95)" : "rgba(255,95,100,0.95)");
-      grad.addColorStop(1, good ? "rgba(47,124,246,0.55)" : "rgba(229,72,77,0.55)");
+      grad.addColorStop(0, pal[0]); grad.addColorStop(1, pal[1]);
       ctx.fillStyle = grad;
       ctx.fillRect(a.x, a.y, b.x - a.x, c.y - a.y);
       ctx.globalAlpha = fade;
-      // frame
-      ctx.strokeStyle = good ? "#1e5ed6" : "#a8262c";
+      ctx.strokeStyle = pal[2];
       ctx.lineWidth = Math.max(1.5, 0.035 * a.s);
       ctx.strokeRect(a.x, a.y, b.x - a.x, c.y - a.y);
-      // shoot meter
-      if (s.shoot && s.val <= 0 && !g.passed) {
+      const pw = b.x - a.x;
+      // progress meter: shoot-to-climb gates and locked upgrades
+      const meter = !g.passed && ((s.shoot && s.val <= 0) ? s.prog : s.lock > 0 ? 1 - s.lock / s.lockMax : -1);
+      if (meter !== false && meter >= 0 && pw > 20) {
         const mh = Math.max(3, 0.05 * a.s);
         ctx.fillStyle = "rgba(0,0,0,0.25)";
-        ctx.fillRect(a.x + 6, c.y - mh - 6, b.x - a.x - 12, mh);
+        ctx.fillRect(a.x + 5, c.y - mh - 5, pw - 10, mh);
         ctx.fillStyle = "#ffe066";
-        ctx.fillRect(a.x + 6, c.y - mh - 6, (b.x - a.x - 12) * s.prog, mh);
+        ctx.fillRect(a.x + 5, c.y - mh - 5, (pw - 10) * meter, mh);
       }
-      // label
-      const fs = Math.max(8, 0.42 * a.s * (1 + s.bump * 0.25));
-      ctx.font = `900 ${fs}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      const tx = (a.x + b.x) / 2, ty = (a.y + c.y) / 2 - fs * 0.05;
-      ctx.lineWidth = Math.max(2, fs * 0.12);
-      ctx.strokeStyle = good ? "#163f91" : "#7a1a1e";
+      // label, shrunk to fit its panel
       const label = opLabel(s.op, s.val);
+      let fs = Math.max(7, (g.small ? 0.3 : 0.42) * a.s * (1 + s.bump * 0.25));
+      ctx.font = `900 ${fs}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+      const tw = ctx.measureText(label).width;
+      if (tw > pw * 0.86) { fs *= (pw * 0.86) / tw; ctx.font = `900 ${fs}px system-ui, -apple-system, "Segoe UI", sans-serif`; }
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const tx = (a.x + b.x) / 2, ty = (a.y + c.y) / 2 - fs * (s.lock > 0 ? 0.3 : 0.05);
+      ctx.lineWidth = Math.max(2, fs * 0.12);
+      ctx.strokeStyle = pal[3];
       ctx.strokeText(label, tx, ty);
       ctx.fillStyle = "#fff";
       ctx.fillText(label, tx, ty);
-      if (s.shoot && s.val <= 0 && !g.passed && fs > 14) {
-        ctx.font = `700 ${fs * 0.3}px system-ui, sans-serif`;
-        ctx.fillStyle = "rgba(255,255,255,0.85)";
-        ctx.fillText("shoot me", tx, ty + fs * 0.62);
+      const sub = s.lock > 0 && !g.passed ? "🔒 " + fmt(Math.ceil(s.lock)) : s.shoot && s.val <= 0 && !g.passed && !g.small ? "shoot me" : "";
+      if (sub && fs > 11) {
+        ctx.font = `800 ${fs * (s.lock > 0 ? 0.5 : 0.3)}px system-ui, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.9)";
+        ctx.fillText(sub, tx, ty + fs * (s.lock > 0 ? 0.8 : 0.62));
       }
       ctx.globalAlpha = 1;
     }
     // posts
-    for (const x of [-ROAD, 0, ROAD]) {
-      const a = proj(x - 0.04, 1.35, g.z), c = proj(x + 0.04, 0, g.z);
+    for (let k = 0; k <= g.sides.length; k++) {
+      const x = k === g.sides.length ? ROAD : g.sides[k].x0;
+      const a = proj(x - 0.04, H0 + 0.1, g.z), c = proj(x + 0.04, 0, g.z);
       if (!a || !c) continue;
       ctx.globalAlpha = fade;
       ctx.fillStyle = "#f6f2ea"; ctx.fillRect(a.x, a.y, c.x - a.x, c.y - a.y);
@@ -785,7 +991,7 @@
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.lineWidth = fs * 0.14; ctx.strokeStyle = "#4a2d12";
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    ctx.strokeText(c.hp, mx, my); ctx.fillStyle = "#fff"; ctx.fillText(c.hp, mx, my);
+    ctx.strokeText(fmt(Math.ceil(c.hp)), mx, my); ctx.fillStyle = "#fff"; ctx.fillText(fmt(Math.ceil(c.hp)), mx, my);
     // what's inside
     const icon = POWER_INFO[c.drop].icon;
     ctx.font = `${fs * 0.75}px system-ui, sans-serif`;
@@ -859,22 +1065,17 @@
     }
   }
 
-  function drawBoss() {
-    if (!boss) return;
-    const b = boss;
-    const sink = b.dead ? Math.min(1, b.deadT * 1.5) : 0;
-    if (b.dead && sink >= 1) return;
-    const breathe = Math.sin(time * 3) * 0.04;
-    const size = 1.05 * (1 - sink * 0.9);
-    const p = proj(0, size + breathe, b.z), g = proj(0, 0, b.z);
-    if (!p) return;
+  // A round horned grump. Used for the boss and, smaller and recoloured, the mini bosses.
+  function drawCreature(x, z, size, look, hit, angry) {
+    const breathe = Math.sin(time * 3 + z) * 0.04;
+    const p = proj(x, size + breathe, z), g = proj(x, 0, z);
+    if (!p) return null;
     const r = size * p.s;
-    const j = b.hit * 0.03 * p.s;
+    const j = hit * 0.03 * p.s;
     const cx = p.x + rand(-j, j), cy = p.y;
     ctx.fillStyle = "rgba(0,0,0,0.22)";
     ctx.beginPath(); ctx.ellipse(g.x, g.y, r * 1.1, r * 0.25, 0, 0, Math.PI * 2); ctx.fill();
-    // horns
-    ctx.fillStyle = "#f3e6c8";
+    ctx.fillStyle = look.horn;
     for (const s of [-1, 1]) {
       ctx.beginPath();
       ctx.moveTo(cx + s * r * 0.45, cy - r * 0.75);
@@ -882,28 +1083,45 @@
       ctx.quadraticCurveTo(cx + s * r * 0.7, cy - r * 1.05, cx + s * r * 0.2, cy - r * 0.85);
       ctx.fill();
     }
-    // body
     const body = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.4, r * 0.1, cx, cy, r);
-    body.addColorStop(0, b.hit > 0.4 ? "#ffffff" : "#b07cff");
-    body.addColorStop(1, b.hit > 0.4 ? "#e0d0ff" : "#6a35c9");
+    body.addColorStop(0, hit > 0.4 ? "#ffffff" : look.c1);
+    body.addColorStop(1, hit > 0.4 ? "#eeeeee" : look.c2);
     ctx.fillStyle = body;
     ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
-    // eyes (angry)
     for (const s of [-1, 1]) {
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.ellipse(cx + s * r * 0.32, cy - r * 0.18, r * 0.2, r * 0.17, 0, 0, Math.PI * 2); ctx.fill();
-      const lookX = clamp((crowd.x - 0) * 0.08, -0.06, 0.06) * r * 5;
+      const lookX = clamp((crowd.x - x) * 0.08, -0.06, 0.06) * r * 5;
       ctx.fillStyle = "#1c1d24";
       ctx.beginPath(); ctx.arc(cx + s * r * 0.32 + lookX, cy - r * 0.14, r * 0.09, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = "#3b1a78"; ctx.lineWidth = r * 0.07; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(cx + s * r * 0.12, cy - r * 0.38); ctx.lineTo(cx + s * r * 0.52, cy - r * 0.46 + (b.slam ? r * 0.08 : 0)); ctx.stroke();
+      ctx.strokeStyle = "rgba(20,10,40,0.75)"; ctx.lineWidth = r * 0.07; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(cx + s * r * 0.12, cy - r * 0.38); ctx.lineTo(cx + s * r * 0.52, cy - r * 0.46 + (angry ? r * 0.08 : 0)); ctx.stroke();
     }
-    // mouth
-    ctx.fillStyle = "#3b1a78";
-    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.35, r * 0.3, (b.slam ? 0.16 : 0.08) * r, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(20,10,40,0.8)";
+    ctx.beginPath(); ctx.ellipse(cx, cy + r * 0.35, r * 0.3, (angry ? 0.16 : 0.08) * r, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = "#fff";
     ctx.fillRect(cx - r * 0.18, cy + r * 0.28, r * 0.09, r * 0.08); ctx.fillRect(cx + r * 0.09, cy + r * 0.28, r * 0.09, r * 0.08);
-
+    return { cx, cy, r };
+  }
+  const BOSS_LOOK = { c1: "#b07cff", c2: "#6a35c9", horn: "#f3e6c8" };
+  function drawBoss() {
+    if (!boss) return;
+    const b = boss;
+    const sink = b.dead ? Math.min(1, b.deadT * 1.5) : 0;
+    if (b.dead && sink >= 1) return;
+    drawCreature(0, b.z, 1.05 * (1 - sink * 0.9), BOSS_LOOK, b.hit, !!b.slam);
+  }
+  function drawMini(m) {
+    if (!m.alive) return;
+    const o = drawCreature(m.x, m.z, m.R, m.kind, m.hit, m.walking);
+    if (!o || o.r < 6) return;
+    // HP bar and name over its head
+    const bw = Math.max(50, o.r * 2), bx = o.cx - bw / 2, by = o.cy - o.r * 1.75;
+    ctx.fillStyle = "rgba(0,0,0,0.4)"; roundRect(bx - 2, by - 2, bw + 4, 14, 7); ctx.fill();
+    ctx.fillStyle = m.kind.c1; roundRect(bx, by, bw * clamp(m.hp / m.max, 0, 1), 10, 5); ctx.fill();
+    ctx.font = `800 ${Math.max(10, Math.min(14, o.r * 0.25))}px system-ui, sans-serif`;
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText(`${m.kind.name} ${fmt(Math.ceil(m.hp))}`, o.cx, by - 4);
   }
 
   function drawBossBar() {
@@ -914,7 +1132,7 @@
       ctx.fillStyle = "rgba(0,0,0,0.35)"; roundRect(bx - 3, by - 3, bw + 6, 20, 10); ctx.fill();
       ctx.fillStyle = "#b07cff"; roundRect(bx, by, bw * clamp(b.hp / b.max, 0, 1), 14, 7); ctx.fill();
       ctx.font = "800 12px system-ui, sans-serif"; ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(`GRUMP  ${Math.max(0, b.hp)}`, W / 2, by + 7);
+      ctx.fillText(`GRUMP  ${fmt(Math.max(0, Math.ceil(b.hp)))}`, W / 2, by + 7);
     }
   }
 
@@ -973,6 +1191,7 @@
     for (const s of saws) if (inView(s.z)) items.push([s.z, drawSaw, s]);
     for (const p of pickups) if (inView(p.z)) items.push([p.z, drawPickup, p]);
     if (boss && inView(boss.z)) items.push([boss.z, drawBoss, null]);
+    for (const m of minis) if (m.alive && inView(m.z)) items.push([m.z, drawMini, m]);
     for (const m of mobs) {
       if (!m.alive || !inView(m.z)) continue;
       for (const mm of m.members) items.push([m.z + mm.z, drawMobMember, [m, mm]]);
@@ -997,17 +1216,21 @@
           ctx.beginPath(); ctx.ellipse(p.x, p.y - 0.1 * p.s, (crowd.R + 0.1) * p.s, (crowd.R * 0.8 + 0.15) * p.s, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
       }
-      drawLabel(crowd.x, crowd.z - crowd.R * 0.2, 0.5 + crowd.R * 0.6, crowd.count.toLocaleString(), "#2f7cf6", crowd.labelBump);
+      drawLabel(crowd.x, crowd.z - crowd.R * 0.2, 0.5 + crowd.R * 0.6, fmt(crowd.count), "#2f7cf6", crowd.labelBump);
     }
     for (const p of popups) {
       const q = proj(p.x, p.y, p.z);
       if (!q) continue;
-      const fs = Math.max(14, Math.min(44, 0.32 * q.s)) * p.size * (1 + Math.max(0, p.life - 0.8) * 2);
+      let fs = Math.max(14, Math.min(44, 0.32 * q.s)) * p.size * (1 + Math.max(0, p.life - 0.8) * 2);
       ctx.globalAlpha = clamp(p.life * 2, 0, 1);
       ctx.font = `900 ${fs}px system-ui, sans-serif`;
+      const tw = ctx.measureText(p.text).width;
+      if (tw > W * 0.86) { fs *= (W * 0.86) / tw; ctx.font = `900 ${fs}px system-ui, sans-serif`; }
+      const qx = clamp(q.x, Math.min(W / 2, tw / 2 + 8), Math.max(W / 2, W - tw / 2 - 8));
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.lineWidth = fs * 0.14; ctx.strokeStyle = "rgba(0,0,0,0.45)";
-      ctx.strokeText(p.text, q.x, q.y); ctx.fillStyle = p.color; ctx.fillText(p.text, q.x, q.y);
+      const qy = Math.min(q.y, H - 120);
+      ctx.strokeText(p.text, qx, qy); ctx.fillStyle = p.color; ctx.fillText(p.text, qx, qy);
       ctx.globalAlpha = 1;
     }
     ctx.restore();
@@ -1027,6 +1250,19 @@
       px += 116;
     }
 
+    // weapon stats
+    if (state === "run" || state === "boss") {
+      const text = `💥 ${fmt(dmgNow())}   🔥 ${gun.rate.toFixed(1)}×   🎯 ${gunsPerVolley()}`;
+      const fsz = 14 * (1 + statsBump * 0.3);
+      ctx.font = `800 ${fsz}px system-ui, sans-serif`;
+      const w = ctx.measureText(text).width + 24;
+      const sy = py - 42;
+      ctx.fillStyle = statsBump > 0.1 ? "rgba(183,121,31,0.85)" : "rgba(0,0,0,0.35)";
+      roundRect(16, sy, w, 34, 17); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(text, 28, sy + 17);
+    }
+
     for (const c of confetti) {
       ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.r); ctx.fillStyle = c.c; ctx.fillRect(-c.s / 2, -c.s / 4, c.s, c.s / 2); ctx.restore();
     }
@@ -1039,7 +1275,7 @@
     const bob = m.walking ? Math.abs(Math.sin(time * 11 + mm.ph)) * 0.03 : 0;
     drawPerson(m.x + mm.x, m.z + mm.z, COLORS.red, COLORS.redDark, bob);
   }
-  function drawMobLabel(m) { drawLabel(m.x, m.z - m.R * 0.2, 0.5 + m.R * 0.6, m.count.toLocaleString(), "#e5484d", 0); }
+  function drawMobLabel(m) { drawLabel(m.x, m.z - m.R * 0.2, 0.5 + m.R * 0.6, fmt(m.count), "#e5484d", 0); }
   function drawBullet(b) {
     const a = proj(b.x, 0.22, b.z), c = proj(b.x - b.vx * 0.02, 0.22, b.z - 0.35);
     if (!a || !c) return;
@@ -1073,5 +1309,5 @@
   requestAnimationFrame(frame);
 
   // test hook for automated checks
-  window.__headcount = { get state() { return state; }, get count() { return crowd.count; }, get z() { return crowd.z; }, get L() { return L; }, crowd, boss: () => boss, gates: () => gates, setCount, applyOp };
+  window.__headcount = { get state() { return state; }, get count() { return crowd.count; }, get z() { return crowd.z; }, get L() { return L; }, crowd, gun, boss: () => boss, gates: () => gates, minis: () => minis, setCount, applyOp, isUpgrade };
 })();
