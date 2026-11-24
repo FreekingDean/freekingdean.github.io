@@ -309,7 +309,7 @@ const ui = {
   win: $('winOverlay'), winText: $('winText'), lose: $('loseOverlay'),
   levels: $('levelsOverlay'), levelGrid: $('levelGrid'), next: $('btnNext'),
   loading: $('loading'), loadingText: $('loadingText'),
-  customSize: $('customSize'), customOut: $('customOut'),
+  customSize: $('customSize'), customOut: $('customOut'), skip: $('btnSkip'),
 };
 
 const store = {
@@ -365,7 +365,7 @@ function build(index, level, saved) {
     return arrow;
   });
   const lives = level.lives || 3;
-  state = { index, level, board, arrows: list, left: list.length, occ, lives, maxLives: lives, bonks: 0, flying: 0, over: false, hint: null };
+  state = { index, level, board, arrows: list, left: list.length, occ, lives, maxLives: lives, bonks: 0, flying: 0, over: false, hint: null, order: [], notes: [], replay: null };
   state.batch = buildBatch(list);
   world.add(state.batch);
 
@@ -376,6 +376,7 @@ function build(index, level, saved) {
   saveProgress();
   ui.win.classList.remove('show');
   ui.lose.classList.remove('show');
+  ui.skip.classList.remove('show');
   updateHud();
 }
 
@@ -390,7 +391,8 @@ function saveProgress() {
   store.set('progress', {
     index: state.index,
     custom: state.index < 0 ? state.level : null,
-    gone: state.arrows.filter((a) => a.gone).map((a) => a.id),
+    gone: state.order,
+    notes: state.notes,
     lives: state.lives,
     bonks: state.bonks,
     cam: camera.position.toArray().map((x) => +x.toFixed(4)),
@@ -399,14 +401,17 @@ function saveProgress() {
 }
 
 function restore(saved) {
-  for (const id of saved.gone || []) {
+  const notes = saved.notes || [];
+  (saved.gone || []).forEach((id, i) => {
     const a = state.arrows[id];
-    if (!a || a.gone) continue;
+    if (!a || a.gone) return;
+    state.order.push(id);
+    state.notes.push(notes[i] || null);
     a.gone = true;
     a.cells.forEach((c) => state.occ.delete(c.key));
     setVisible(a, false);
     state.left--;
-  }
+  });
   if (typeof saved.lives === 'number') state.lives = Math.max(1, Math.min(state.maxLives, saved.lives));
   state.bonks = saved.bonks || 0;
   if (Array.isArray(saved.cam) && saved.cam.length === 3) {
@@ -507,6 +512,21 @@ function clearHint() {
   state.hint = null;
 }
 
+// Animate an arrow slithering off its face and away.
+function flyAway(arrow, done) {
+  setVisible(arrow, false);
+  const mesh = movingMesh(arrow, INK);
+  const distance = arrow.path.bodyLen + 14;
+  const duration = Math.min(1600, 380 + distance * 28);
+  tween(duration, (t) => {
+    mesh.userData.place(easeIn(t) * distance);
+    mesh.material.opacity = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+  }, () => {
+    dropMesh(mesh);
+    done && done();
+  });
+}
+
 function tapArrow(arrow) {
   if (state.over || arrow.busy || arrow.gone) return;
   clearHint();
@@ -520,20 +540,10 @@ function tapArrow(arrow) {
     state.left--;
     state.flying++;
     updateHud();
-    sfx.slide();
+    state.order.push(arrow.id);
+    state.notes.push(sfx.slide());
     if (state.left) saveProgress();
-    setVisible(arrow, false);
-    const mesh = movingMesh(arrow, INK);
-    const distance = arrow.path.bodyLen + 14;
-    const duration = Math.min(1600, 380 + distance * 28);
-    tween(duration, (t) => {
-      mesh.userData.place(easeIn(t) * distance);
-      mesh.material.opacity = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
-    }, () => {
-      dropMesh(mesh);
-      state.flying--;
-      checkWin();
-    });
+    flyAway(arrow, () => { state.flying--; checkWin(); });
     return;
   }
 
@@ -586,10 +596,67 @@ function checkWin() {
     : `${state.arrows.length} arrows untangled.${flawless}`;
   ui.next.textContent = state.index < 0 ? 'Another one' : last ? 'Back to level 1' : 'Next level';
   const won = state;
-  setTimeout(() => { if (state === won) ui.win.classList.add('show'); }, 250);
+  setTimeout(() => { if (state === won) startReplay(); }, 500);
 }
 
 const headCell = (a) => a.cells[a.cells.length - 1];
+
+// ---------------------------------------------------------------------------
+// Victory replay: put every arrow back, then send them off again in the
+// order you cleared them, one song note per beat whatever pace you played
+// at, with the camera turning to follow each one. Bonks are left out.
+// ---------------------------------------------------------------------------
+const BEAT = 280;        // ms per beat of the song
+const MAX_STEPS = 140;   // big cubes send several arrows per note to stay ~40s
+
+function startReplay() {
+  const r = state;
+  if (!r.order.length) { ui.win.classList.add('show'); return; }
+  ui.win.classList.remove('show');
+  ui.skip.classList.add('show');
+  r.order.forEach((id) => setVisible(r.arrows[id], true));
+  const per = Math.ceil(r.order.length / MAX_STEPS);
+  const steps = [];
+  for (let i = 0; i < r.order.length; i += per) {
+    steps.push({ ids: r.order.slice(i, i + per), note: r.notes[i] || [0, 1] });
+  }
+  const token = {};
+  r.replay = { token, aim: null };
+  let i = 0;
+  const step = () => {
+    if (state !== r || r.replay?.token !== token) return;
+    if (i >= steps.length) { setTimeout(() => endReplay(r, token), 1100); return; }
+    const { ids, note } = steps[i++];
+    // Point the camera at the arrows about to leave.
+    const aim = new THREE.Vector3();
+    ids.forEach((id) => aim.add(world.localToWorld(v3(r.board.center(headCell(r.arrows[id]))))));
+    if (aim.lengthSq() > 1e-6) r.replay.aim = aim.normalize();
+    sfx.pluck(note);
+    ids.forEach((id) => flyAway(r.arrows[id]));
+    setTimeout(step, BEAT * (note[1] || 1));
+  };
+  // Look at the first arrow, then give the camera a moment to get there.
+  const first = r.arrows[steps[0].ids[0]];
+  r.replay.aim = world.localToWorld(v3(r.board.center(headCell(first)))).normalize();
+  view.alt = view.fitAlt * (Math.max(...r.level.size) > 10 ? 0.6 : 1);
+  ui.remaining.textContent = 'Replaying your clear';
+  setTimeout(step, 700);
+}
+
+function endReplay(r, token) {
+  if (state !== r || r.replay?.token !== token) return;
+  r.replay = null;
+  updateHud();
+  ui.skip.classList.remove('show');
+  ui.win.classList.add('show');
+}
+
+function skipReplay() {
+  const r = state;
+  if (!r.replay) return;
+  r.order.forEach((id) => setVisible(r.arrows[id], false));
+  endReplay(r, r.replay.token);
+}
 
 function showHint() {
   if (state.over) return;
@@ -765,6 +832,8 @@ const replay = () => loadLevel(state.index, state.index < 0 ? state.level : unde
 $('btnRestart').addEventListener('click', replay);
 $('btnRetry').addEventListener('click', replay);
 $('btnReplay').addEventListener('click', replay);
+$('btnWatch').addEventListener('click', startReplay);
+ui.skip.addEventListener('click', skipReplay);
 $('btnHint').addEventListener('click', showHint);
 $('btnView').addEventListener('click', fitCamera);
 $('btnZoomIn').addEventListener('click', () => zoom(0.7));
@@ -788,6 +857,15 @@ function frame(now) {
     const pulse = 0.5 + 0.5 * Math.sin(now / 140);
     setColor(state.hint, INK.clone().lerp(HINT, 0.35 + 0.65 * pulse));
   }
+  if (state && state.replay && state.replay.aim) {
+    // Swing smoothly toward the arrows that are leaving.
+    const dt = Math.min(0.1, (now - (frame.last || now)) / 1000);
+    const dir = camera.position.clone().normalize();
+    const q = new THREE.Quaternion().setFromUnitVectors(dir, state.replay.aim);
+    const qt = new THREE.Quaternion().slerp(q, 1 - Math.exp(-dt * 3.5));
+    camera.position.applyQuaternion(qt);
+  }
+  frame.last = now;
   controls.update();
   placeCamera();
   renderer.render(scene, camera);
