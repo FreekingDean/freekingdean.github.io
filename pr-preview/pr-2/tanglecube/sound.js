@@ -7,28 +7,94 @@ let master = null;
 let noise = null;
 let muted = false;
 
-// Each arrow that escapes plays the next note of a song, so clearing the
-// cube plays it through, looping at the end. Notes are semitones above C5;
-// a second value of 2 marks a held note at the end of a phrase.
+// Each arrow that escapes plays the next note of a song, so clearing a cube
+// plays the tune through. All of these are public-domain melodies.
+//
+// Notes are written as name + octave (C5 is the C above middle C), with a
+// "-" on the end for each extra beat a phrase-ending note should ring.
+const SONGS = {
+  mountain: {
+    name: 'In the Hall of the Mountain King (Grieg)',
+    notes: `A4 B4 C5 D5 E5 C5 E5- D#5 B4 D#5- D5 Bb4 D5- A4 B4 C5 D5 E5 C5 E5 A5 G5 E5 C5 E5 G5--
+            A4 B4 C5 D5 E5 C5 E5- D#5 B4 D#5- D5 Bb4 D5- A4 B4 C5 D5 E5 C5 E5 A5 G5 E5 C5 E5 A5--`,
+  },
+  ode: {
+    name: 'Ode to Joy (Beethoven)',
+    notes: `E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 E5- D5 D5--
+            E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5- C5 C5--
+            D5 D5 E5 C5 D5 E5 F5 E5 C5 D5 E5 F5 E5 D5 C5 D5 G4-
+            E5 E5 F5 G5 G5 F5 E5 D5 C5 C5 D5 E5 D5- C5 C5--`,
+  },
+  korobeiniki: {
+    name: 'Korobeiniki (Russian folk song)',
+    notes: `E5 B4 C5 D5 C5 B4 A4 A4 C5 E5 D5 C5 B4 C5 D5 E5 C5 A4 A4-
+            D5 F5 A5 G5 F5 E5 C5 E5 D5 C5 B4 B4 C5 D5 E5 C5 A4 A4--`,
+  },
+  elise: {
+    name: 'Für Elise (Beethoven)',
+    notes: `E5 D#5 E5 D#5 E5 B4 D5 C5 A4- C4 E4 A4 B4- E4 G#4 B4 C5-
+            E4 E5 D#5 E5 D#5 E5 B4 D5 C5 A4- C4 E4 A4 B4- E4 C5 B4 A4--`,
+  },
+  nachtmusik: {
+    name: 'Eine kleine Nachtmusik (Mozart)',
+    notes: `G5- D5 G5- D5 G5 D5 G5 B5 D6-- C6- A5 C6- A5 C6 A5 F#5 A5 D5--`,
+  },
+  twinkle: {
+    name: 'Twinkle, Twinkle, Little Star',
+    notes: `C5 C5 G5 G5 A5 A5 G5- F5 F5 E5 E5 D5 D5 C5- G5 G5 F5 F5 E5 E5 D5- G5 G5 F5 F5 E5 E5 D5-
+            C5 C5 G5 G5 A5 A5 G5- F5 F5 E5 E5 D5 D5 C5--`,
+  },
+};
+const PLAYLIST = ['mountain', 'ode', 'korobeiniki', 'elise', 'nachtmusik', 'twinkle'];
+
 const ROOT = 523.25; // C5
 const note = (semitones) => ROOT * Math.pow(2, semitones / 12);
+const NAMES = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 
-const C = 0, D = 2, E = 4, F = 5, G = 7, A = 9;
-const SONG = [
-  // Twinkle, twinkle, little star, how I wonder what you are
-  [C], [C], [G], [G], [A], [A], [G, 2], [F], [F], [E], [E], [D], [D], [C, 2],
-  // Up above the world so high, like a diamond in the sky
-  [G], [G], [F], [F], [E], [E], [D, 2], [G], [G], [F], [F], [E], [E], [D, 2],
-  // Twinkle, twinkle, little star, how I wonder what you are
-  [C], [C], [G], [G], [A], [A], [G, 2], [F], [F], [E], [E], [D], [D], [C, 2],
+// "D#5--" -> [semitones above C5, beats held]
+function parse(text) {
+  return text.trim().split(/\s+/).map((tok) => {
+    const m = /^([A-G])([#b]?)(\d)(-*)$/.exec(tok);
+    if (!m) throw new Error(`bad note ${tok}`);
+    const semis = NAMES[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (Number(m[3]) - 5) * 12;
+    return [semis, 1 + m[4].length];
+  });
+}
+for (const song of Object.values(SONGS)) song.parsed = parse(song.notes);
+
+export const songs = [
+  { id: 'all', name: 'All of them, one after another' },
+  ...PLAYLIST.map((id) => ({ id, name: SONGS[id].name })),
 ];
 
-let songPos = 0;
-try { songPos = Number(localStorage.getItem('tanglecube.songPos')) % SONG.length || 0; } catch { /* ignore */ }
+const saved = (k, d) => { try { return localStorage.getItem('tanglecube.' + k) ?? d; } catch { return d; } };
+const keep = (k, v) => { try { localStorage.setItem('tanglecube.' + k, String(v)); } catch { /* ignore */ } };
+
+const savedSong = saved('song', 'all');
+let songId = savedSong === 'all' || SONGS[savedSong] ? savedSong : 'all';
+let current = songId === 'all' ? saved('songPlaying', PLAYLIST[0]) : songId;
+if (!SONGS[current]) current = PLAYLIST[0];
+let songPos = Number(saved('songPos', 0)) || 0;
+
+export const currentSong = () => songId;
+
+export function setSong(id) {
+  songId = id === 'all' || SONGS[id] ? id : 'all';
+  current = songId === 'all' ? PLAYLIST[0] : songId;
+  songPos = 0;
+  keep('song', songId); keep('songPlaying', current); keep('songPos', 0);
+}
+
 function nextNote() {
-  const n = SONG[songPos];
-  songPos = (songPos + 1) % SONG.length;
-  try { localStorage.setItem('tanglecube.songPos', String(songPos)); } catch { /* ignore */ }
+  const notes = SONGS[current].parsed;
+  if (songPos >= notes.length) songPos = 0;
+  const n = notes[songPos++];
+  if (songPos >= notes.length) {
+    songPos = 0;
+    // In playlist mode, move on to the next tune.
+    if (songId === 'all') current = PLAYLIST[(PLAYLIST.indexOf(current) + 1) % PLAYLIST.length];
+  }
+  keep('songPlaying', current); keep('songPos', songPos);
   return n;
 }
 
