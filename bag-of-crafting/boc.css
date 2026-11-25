@@ -64,6 +64,8 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 }
 .version:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .version input { margin-top: 4px; accent-color: var(--accent); }
+.pick-first { margin: 0 0 4px; color: var(--accent); font-weight: 600; }
+.versions.unpicked .version { border-style: dashed; border-color: var(--accent); }
 .version span { display: flex; flex-direction: column; }
 .version small { color: var(--muted); }
 .seed-row { display: flex; flex-direction: column; min-width: 0; }

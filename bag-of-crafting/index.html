@@ -20,8 +20,9 @@
     <section class="panel settings" aria-label="Run settings">
       <fieldset class="versions">
         <legend>Game version</legend>
+        <p id="version-prompt" class="hint pick-first">Pick yours first. Switch 1 and Switch 2 craft different items.</p>
         <label class="version">
-          <input type="radio" name="version" value="repplus" checked>
+          <input type="radio" name="version" value="repplus">
           <span>
             <strong>Repentance+</strong>
             <small>Switch 2, PC, PS5, Xbox Series · v1.9.7.15 data</small>
@@ -117,6 +118,7 @@
       <h2>How accurate is this?</h2>
       <p>It runs the game's own crafting algorithm: the same seeded random number generator, item pools, pool weights and quality rules, ported from the reverse-engineered code used by the <a href="https://github.com/wofsauge/External-Item-Descriptions">External Item Descriptions</a> mod, with item data pulled straight from the game files.</p>
       <ul>
+        <li>Each version has its own link you can bookmark: <a href="?v=repentance-plus">Repentance+ (Switch 2)</a> and <a href="?v=repentance">Repentance (Switch 1)</a>.</li>
         <li><strong>Repentance+</strong> uses the v1.9.7.15 files (the newest data dump available). Repentance+ came to Switch 2, PS5 and Xbox Series on 19 November 2026 and shares the PC version's content.</li>
         <li><strong>Repentance</strong> uses the v1.7.9b files. The Switch 1, PS4 and Xbox One versions were patched to 1.7.9b in April 2023, and they don't get Repentance+.</li>
         <li>The two versions really do craft different things: Repentance+ changed some item qualities and item pools, and turned the 8-bomb recipe into Mr. Mega.</li>

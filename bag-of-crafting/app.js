@@ -5,9 +5,26 @@
   var QCOLORS = ["var(--q0)", "var(--q1)", "var(--q2)", "var(--q3)", "var(--q4)"];
   var GROUPS = ["Hearts", "Coins", "Keys", "Bombs", "Batteries", "Other"];
   var STORE_KEY = "boc-settings-v1";
+  // Each version has its own link: ?v=repentance-plus (Switch 2 / PC) or ?v=repentance (Switch 1).
+  var SLUGS = { repplus: "repentance-plus", rep: "repentance" };
+  function versionFromUrl() {
+    try {
+      var v = new URLSearchParams(location.search).get("v");
+      for (var k in SLUGS) if (SLUGS[k] === v) return k;
+    } catch (e) { /* old browser */ }
+    return null;
+  }
+  function syncUrl() {
+    try {
+      var u = new URL(location.href);
+      u.searchParams.set("v", SLUGS[state.version]);
+      history.replaceState(null, "", u.pathname + u.search + u.hash);
+    } catch (e) { /* ignore */ }
+  }
 
   var state = {
-    version: "repplus",
+    version: null, // no default: the URL or the person picks
+
     seed: null,
     seedText: "",
     opts: {},
@@ -79,9 +96,10 @@
     document.querySelectorAll('input[name="version"]').forEach(function (r) {
       r.checked = r.value === state.version;
       r.addEventListener("change", function () {
-        state.version = r.value; save(); renderCraft(); clearFinder(); fillItemList();
+        state.version = r.value; save(); syncUrl(); renderVersion(); renderCraft(); clearFinder(); fillItemList();
       });
     });
+    renderVersion();
     var seed = $("seed");
     seed.value = state.seedText;
     seed.addEventListener("input", function () {
@@ -99,6 +117,13 @@
       });
     });
     checkSeed();
+  }
+  function renderVersion() {
+    var picked = !!state.version;
+    $("version-prompt").hidden = picked;
+    document.querySelector(".versions").classList.toggle("unpicked", !picked);
+    var d = picked ? data() : null;
+    document.title = "Bag of Crafting" + (d ? " (" + (state.version === "rep" ? "Repentance · Switch 1" : "Repentance+ · Switch 2") + ")" : "") + " · The Playground";
   }
   function checkSeed() {
     var st = $("seed-status"), inp = $("seed");
@@ -173,6 +198,10 @@
     var box = $("result");
     box.textContent = "";
     var qsum = state.bag.reduce(function (a, c) { return a + P[c].value; }, 0);
+    if (!state.version) {
+      box.appendChild(el("p", { class: "result-empty", text: "Pick your game version above first. Switch 1 and Switch 2 craft different items." }));
+      return;
+    }
     if (state.bag.length < 8) {
       box.appendChild(el("p", { class: "result-empty", text: "Fill all 8 slots to see the result. " +
         (state.bag.length ? "(" + state.bag.length + "/8, worth " + qsum + " so far)" : "") }));
@@ -278,6 +307,7 @@
   function fillItemList() {
     var dl = $("item-list");
     dl.textContent = "";
+    if (!state.version) return;
     var seen = {};
     var d = data();
     Object.keys(d.pools).forEach(function (pid) {
@@ -308,6 +338,10 @@
     if (worker) { clearFinder(); return; } // acts as Cancel
     var res = $("find-results");
     res.textContent = "";
+    if (!state.version) {
+      res.appendChild(el("p", { class: "panel", text: "Pick your game version above first." }));
+      return;
+    }
     if (state.seed === null) {
       res.appendChild(el("p", { class: "panel", text: "Enter a valid seed first. Recipes are different on every seed." }));
       return;
@@ -407,6 +441,9 @@
 
   // ---- boot ----
   load();
+  var fromUrl = versionFromUrl();
+  if (fromUrl) state.version = fromUrl;
+  if (state.version) syncUrl();
   initSettings();
   initTabs();
   initPalette();
