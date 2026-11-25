@@ -353,6 +353,52 @@
     return done;
   }
 
+  // Like enumerate, but also tries every bag that needs exactly one pickup more
+  // than you hold. onResult(item, comp, qsum, extra) gets extra = that pickup's
+  // id, or 0 when the bag only uses what you already have.
+  function enumerateWithOneMore(ctx, have, seed, onResult, onProgress) {
+    var comp = new Array(8);
+    var counts = new Array(PICKUP_COUNT + 2).fill(0);
+    var total = countBagsOneMore(have), done = 0, nextReport = 50000;
+    function rec(depth, start, rng, qsum, extra) {
+      if (depth === 8) {
+        onResult(craftFast(ctx, comp, seed, counts, qsum, rng), comp, qsum, extra);
+        done++;
+        if (onProgress && done >= nextReport) { nextReport += 50000; onProgress(done, total); }
+        return;
+      }
+      for (var p = start; p <= PICKUP_COUNT; p++) {
+        var lim = have[p] || 0, ex = extra;
+        if (counts[p] >= lim) {
+          if (extra || counts[p] > lim || lim >= 8) continue;
+          ex = p;
+        }
+        counts[p]++;
+        comp[depth] = p;
+        rec(depth + 1, p, rngNext(rng, SHIFTS[p]), qsum + PICKUPS[p].value, ex);
+        counts[p]--;
+      }
+    }
+    rec(0, 1, seed >>> 0, 0, 0);
+    if (onProgress) onProgress(done, total);
+    return done;
+  }
+
+  function countBagsOneMore(have) {
+    // ways[used extra?][size]
+    var w0 = [1, 0, 0, 0, 0, 0, 0, 0, 0], w1 = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for (var id = 1; id <= PICKUP_COUNT; id++) {
+      var m = Math.min(have[id] || 0, 8);
+      var n0 = [0, 0, 0, 0, 0, 0, 0, 0, 0], n1 = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      for (var s = 0; s <= 8; s++) {
+        for (var c = 0; c <= m && s + c <= 8; c++) { n0[s + c] += w0[s]; n1[s + c] += w1[s]; }
+        if (m < 8 && s + m + 1 <= 8) n1[s + m + 1] += w0[s];
+      }
+      w0 = n0; w1 = n1;
+    }
+    return w0[8] + w1[8];
+  }
+
   // Number of distinct bags of 8 from the given holdings (bounded multisets).
   function countBags(have) {
     var ways = [1, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -373,7 +419,7 @@
     PICKUPS: PICKUPS, PICKUP_COUNT: PICKUP_COUNT, POOL_NAMES: POOL_NAMES,
     parseSeed: parseSeed, seedToString: seedToString,
     makeContext: makeContext, craft: craft, craftFast: craftFast,
-    enumerate: enumerate, countBags: countBags, qualityRange: qualityRange
+    enumerate: enumerate, enumerateWithOneMore: enumerateWithOneMore, countBags: countBags, countBagsOneMore: countBagsOneMore, qualityRange: qualityRange
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.BOC = api;

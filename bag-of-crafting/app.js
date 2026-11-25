@@ -83,6 +83,19 @@
     if (it && it.cq !== it.q && it.cq >= 0) b.title = "Counts as quality " + it.cq + " for crafting";
     return b;
   }
+  var TIERS = window.BOC_TIERS || {};
+  var TIER_RANK = { "break": 3, S: 2, A: 1 };
+  var TIER_LABEL = { "break": "Breaker", S: "S", A: "A" };
+  function tierOf(id) { return TIERS[id] || null; }
+  function tierBadge(id) {
+    var t = tierOf(id);
+    return t ? el("span", { class: "tier tier-" + t, text: TIER_LABEL[t] }) : null;
+  }
+  function byPower(a, b) {
+    var ta = TIER_RANK[tierOf(a)] || 0, tb = TIER_RANK[tierOf(b)] || 0;
+    var qa = item(a) ? item(a).q : 0, qb = item(b) ? item(b).q : 0;
+    return tb - ta || qb - qa || itemName(a).localeCompare(itemName(b));
+  }
   function pct(x) { var v = Math.round(x * 100); return (v === 0 && x > 0 ? "<1" : v) + "%"; }
   function glyphs(comp) { return comp.map(function (c) { return P[c].glyph; }).join(""); }
   function names(comp) {
@@ -141,17 +154,18 @@
 
   // ---- tabs ----
   function initTabs() {
-    var tabs = [["tab-craft", "view-craft"], ["tab-find", "view-find"]];
-    tabs.forEach(function (t) {
+    TABS.forEach(function (t) {
       $(t[0]).addEventListener("click", function () { showTab(t[0]); });
     });
   }
+  var TABS = [["tab-craft", "view-craft"], ["tab-find", "view-find"], ["tab-break", "view-break"]];
   function showTab(id) {
-    [["tab-craft", "view-craft"], ["tab-find", "view-find"]].forEach(function (t) {
+    TABS.forEach(function (t) {
       var on = t[0] === id;
       $(t[0]).setAttribute("aria-selected", on ? "true" : "false");
       $(t[1]).hidden = !on;
     });
+    $("holdings").hidden = id === "tab-craft";
   }
 
   // ---- craft view ----
@@ -288,6 +302,7 @@
     $("have-all").addEventListener("click", function () { setAllHave(8); });
     $("have-clear").addEventListener("click", function () { setAllHave(0); });
     $("find-go").addEventListener("click", runFinder);
+    $("break-go").addEventListener("click", runBreak);
     fillItemList();
     updateCount();
   }
@@ -303,6 +318,9 @@
     var n = BOC.countBags(state.have);
     $("find-count").textContent = n ? n.toLocaleString() + " possible bag" + (n === 1 ? "" : "s") : "You need at least 8 pickups.";
     $("find-go").disabled = !n;
+    var m = BOC.countBagsOneMore(state.have);
+    $("break-count").textContent = m ? m.toLocaleString() + " bags to try, counting one extra pickup" : "";
+    $("break-go").disabled = !m;
   }
   function fillItemList() {
     var dl = $("item-list");
@@ -331,6 +349,9 @@
     $("find-go").textContent = "Find recipes";
     $("find-results").textContent = "";
     lastFound = null;
+    $("break-progress").hidden = true;
+    $("break-go").textContent = "Find the best crafts";
+    $("break-results").textContent = "";
     updateCount();
   }
 
@@ -382,6 +403,27 @@
     worker.postMessage({ id: jobId, version: state.version, opts: state.opts, seed: state.seed, have: state.have, target: target });
   }
 
+  // One expandable result row: item, how many bags make it, cheapest recipes.
+  function itemRow(id, f, open, countLabel) {
+    var recipes = el("ul", { class: "fr-recipes" });
+    f.recipes.forEach(function (r) {
+      recipes.appendChild(el("li", {}, [
+        el("span", { class: "glyphs", "aria-hidden": "true", text: glyphs(r.c) }),
+        el("span", { class: "hint", text: names(r.c) }),
+        el("button", { class: "ghost", type: "button", text: "Put in bag", onclick: function () {
+          state.bag = r.c.slice(); save(); renderCraft(); showTab("tab-craft"); window.scrollTo({ top: $("view-craft").offsetTop - 16, behavior: "smooth" });
+        } })
+      ]));
+    });
+    var det = el("details", {}, [
+      el("summary", {}, [qualityBadge(id), tierBadge(id), el("span", { class: "nm", text: itemName(id) }),
+        el("span", { class: "cnt", text: countLabel || (f.count.toLocaleString() + " recipe" + (f.count === 1 ? "" : "s")) })]),
+      recipes
+    ]);
+    if (open) det.open = true;
+    return el("li", { class: "fr-item" }, [det]);
+  }
+
   function renderFound() {
     var res = $("find-results");
     res.textContent = "";
@@ -417,26 +459,91 @@
       var q = item(id) ? item(id).q : 0;
       if (qFilter >= 0 && q !== qFilter) return;
       if (shown++ > 400) return;
-      var f = found[id];
-      var recipes = el("ul", { class: "fr-recipes" });
-      f.recipes.forEach(function (r) {
-        recipes.appendChild(el("li", {}, [
-          el("span", { class: "glyphs", "aria-hidden": "true", text: glyphs(r.c) }),
-          el("span", { class: "hint", text: names(r.c) }),
-          el("button", { class: "ghost", type: "button", text: "Put in bag", onclick: function () {
-            state.bag = r.c.slice(); save(); renderCraft(); showTab("tab-craft"); window.scrollTo({ top: $("view-craft").offsetTop - 16, behavior: "smooth" });
-          } })
-        ]));
-      });
-      var det = el("details", {}, [
-        el("summary", {}, [qualityBadge(id), el("span", { class: "nm", text: itemName(id) }), el("span", { class: "cnt", text: f.count.toLocaleString() + " recipe" + (f.count === 1 ? "" : "s") })]),
-        recipes
-      ]);
-      if (lastFound.target) det.open = true;
-      list.appendChild(el("li", { class: "fr-item" }, [det]));
+      list.appendChild(itemRow(id, found[id], !!lastFound.target));
     });
     res.appendChild(list);
     if (shown > 400) res.appendChild(el("p", { class: "hint", text: "Showing the first 400. Use the quality filter to see the rest." }));
+  }
+
+  // ---- break the game ----
+  function runBreak() {
+    if (worker) { clearFinder(); return; }
+    var res = $("break-results");
+    res.textContent = "";
+    if (!state.version) { res.appendChild(el("p", { class: "panel", text: "Pick your game version above first." })); return; }
+    if (state.seed === null) { res.appendChild(el("p", { class: "panel", text: "Enter a valid seed first. Recipes are different on every seed." })); return; }
+    try { worker = new Worker("finder-worker.js"); } catch (e) {
+      res.appendChild(el("p", { class: "panel", text: "Your browser blocked the background search." })); return;
+    }
+    $("break-progress").hidden = false;
+    $("break-bar").style.width = "0%";
+    $("break-go").textContent = "Cancel";
+    var started = Date.now();
+    worker.onerror = function (e) {
+      clearFinder();
+      $("break-results").appendChild(el("p", { class: "panel", text: "The search crashed: " + (e.message || "unknown error") + "." }));
+    };
+    worker.onmessage = function (e) {
+      var m = e.data;
+      if (m.type === "progress") $("break-bar").style.width = (m.total ? m.done / m.total * 100 : 0) + "%";
+      else if (m.type === "break-done") {
+        worker.terminate(); worker = null;
+        $("break-go").textContent = "Find the best crafts";
+        $("break-progress").hidden = true;
+        renderBreak(m, Date.now() - started);
+      }
+    };
+    worker.postMessage({ mode: "break", version: state.version, opts: state.opts, seed: state.seed, have: state.have, tiers: TIERS });
+  }
+
+  function renderBreak(m, ms) {
+    var res = $("break-results");
+    res.textContent = "";
+    var now = Object.keys(m.now).map(Number).sort(byPower);
+    var sec1 = el("section", { class: "br-section" }, [el("h3", { text: "Best crafts from what you hold" })]);
+    if (!now.length) {
+      sec1.appendChild(el("p", { class: "panel", text: m.anyNow ? "Nothing on the tier list is craftable from these pickups yet. See below for what to grab." : "You need at least 8 pickups to craft anything." }));
+    } else {
+      var list = el("ul", { class: "fr-list" });
+      now.forEach(function (id) { list.appendChild(itemRow(id, m.now[id], false)); });
+      sec1.appendChild(list);
+    }
+    res.appendChild(sec1);
+
+    var cards = Object.keys(m.next).map(Number).map(function (p) {
+      var ids = Object.keys(m.next[p]).map(Number).sort(byPower);
+      var score = ids.reduce(function (a, id) { return a + ({ "break": 9, S: 3, A: 1 })[tierOf(id)]; }, 0);
+      return { p: p, ids: ids, score: score };
+    }).filter(function (c) { return c.ids.length; }).sort(function (a, b) { return b.score - a.score || b.ids.length - a.ids.length; });
+
+    var sec2 = el("section", { class: "br-section" }, [el("h3", { text: "Grab one more…" })]);
+    if (!cards.length) {
+      sec2.appendChild(el("p", { class: "hint", text: "No single extra pickup adds a tier-list craft. Try adding a pickup type you don't have yet." }));
+    } else {
+      var grid = el("ul", { class: "grab-list" });
+      cards.slice(0, 18).forEach(function (c) {
+        var counts = { "break": 0, S: 0, A: 0 };
+        c.ids.forEach(function (id) { counts[tierOf(id)]++; });
+        var summary = ["break", "S", "A"].filter(function (t) { return counts[t]; })
+          .map(function (t) { return counts[t] + " " + TIER_LABEL[t]; }).join(" · ");
+        var items = el("p", { class: "grab-items" });
+        c.ids.slice(0, 8).forEach(function (id, i) {
+          if (i) items.appendChild(document.createTextNode(", "));
+          items.appendChild(el("b", { text: itemName(id) }));
+        });
+        if (c.ids.length > 8) items.appendChild(document.createTextNode(" and " + (c.ids.length - 8) + " more"));
+        var rows = el("ul", { class: "fr-list" });
+        c.ids.forEach(function (id) { rows.appendChild(itemRow(id, m.next[c.p][id], false)); });
+        var more = el("details", {}, [el("summary", { class: "hint", text: "Show recipes" }), rows]);
+        grid.appendChild(el("li", { class: "grab" }, [
+          el("div", { class: "grab-head" }, [el("span", { class: "g", "aria-hidden": "true", text: P[c.p].glyph }), "+1 " + P[c.p].name, el("span", { class: "cnt", text: summary })]),
+          items, more
+        ]));
+      });
+      sec2.appendChild(grid);
+    }
+    res.appendChild(sec2);
+    res.appendChild(el("p", { class: "hint", text: "Checked " + m.total.toLocaleString() + " bags in " + (ms / 1000).toFixed(1) + "s." }));
   }
 
   // ---- boot ----
