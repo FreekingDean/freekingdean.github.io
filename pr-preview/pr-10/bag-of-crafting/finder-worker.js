@@ -34,8 +34,26 @@ function runBreak(msg) {
   self.postMessage({ type: "break-done", now: now, next: next, anyNow: anyNow, total: total });
 }
 
+function runEasiest(msg) {
+  var data = self.BOC_DATA[msg.version];
+  var ctx = BOC.makeContext(data, msg.opts);
+  var tiers = msg.tiers, effort = msg.effort, best = {}, lastPost = 0;
+  var total = BOC.enumerate(ctx, msg.have, msg.seed, function (item, comp) {
+    var it = data.items[item];
+    if (!tiers[item] && !(it && it.q === 4)) return;
+    var cost = 0;
+    for (var i = 0; i < 8; i++) cost += effort[comp[i]];
+    keep(best, item, comp, cost, 3);
+  }, function (done, all) {
+    var t = Date.now();
+    if (t - lastPost > 150 || done === all) { lastPost = t; self.postMessage({ type: "progress", done: done, total: all }); }
+  });
+  self.postMessage({ type: "easiest-done", best: best, total: total });
+}
+
 self.onmessage = function (e) {
   var msg = e.data;
+  if (msg.mode === "easiest") return runEasiest(msg);
   if (msg.mode === "break") return runBreak(msg);
   var data = self.BOC_DATA[msg.version];
   var ctx = BOC.makeContext(data, msg.opts);

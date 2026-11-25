@@ -7,10 +7,7 @@
  */
 (globalThis.BOC_TIERS = {
   // break
-  116: "break", // 9 Volt
   706: "break", // Abyss
-  603: "break", // Battery Pack
-  584: "break", // Book of Virtues
   357: "break", // Box of Friends
   356: "break", // Car Battery
   485: "break", // Crooked Penny
@@ -21,13 +18,8 @@
   609: "break", // Eternal D6
   622: "break", // Genesis
   422: "break", // Glowing Hourglass
-  156: "break", // Habit
-  685: "break", // Jar of Wisps
-  712: "break", // Lemegeton
-  439: "break", // Mom's Box
   636: "break", // R Key
   691: "break", // Sacred Orb
-  534: "break", // Schoolbag
   723: "break", // Spindown Dice
   721: "break", // TMTRAINER
   105: "break", // The D6
@@ -58,9 +50,17 @@
   395: "S", // Tech X
   244: "S", // Tech.5
   68: "S", // Technology
-  329: "S", // The Ludovico Technique
   698: "S", // Twisted Pair
   // A
+  116: "A", // 9 Volt
+  603: "A", // Battery Pack
+  584: "A", // Book of Virtues
+  156: "A", // Habit
+  685: "A", // Jar of Wisps
+  712: "A", // Lemegeton
+  439: "A", // Mom's Box
+  534: "A", // Schoolbag
+  329: "A", // The Ludovico Technique
   240: "A", // Experimental Treatment
   245: "A", // 20/20
   561: "A", // Almond Milk
