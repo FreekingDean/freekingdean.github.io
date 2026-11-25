@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bag of Crafting · The Playground</title>
+  <meta name="description" content="Binding of Isaac Bag of Crafting calculator and recipe finder for Repentance and Repentance+, including Nintendo Switch.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👜</text></svg>">
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="boc.css">
+</head>
+<body>
+  <header class="hero boc-hero">
+    <p class="eyebrow"><a href="../">← the playground</a></p>
+    <h1>Bag of Crafting</h1>
+    <p class="tagline">Put 8 pickups in the bag and see exactly what Tainted Cain crafts on your seed. Or let it search every recipe you can make.</p>
+  </header>
+
+  <main class="boc">
+    <section class="panel settings" aria-label="Run settings">
+      <fieldset class="versions">
+        <legend>Game version</legend>
+        <p id="version-prompt" class="hint pick-first">Pick yours first. Switch 1 and Switch 2 craft different items.</p>
+        <label class="version">
+          <input type="radio" name="version" value="repplus">
+          <span>
+            <strong>Repentance+</strong>
+            <small>Switch 2, PC, PS5, Xbox Series · v1.9.7.15 data</small>
+          </span>
+        </label>
+        <label class="version">
+          <input type="radio" name="version" value="rep">
+          <span>
+            <strong>Repentance</strong>
+            <small>Switch 1, PS4, Xbox One · v1.7.9b</small>
+          </span>
+        </label>
+      </fieldset>
+
+      <div class="seed-row">
+        <label for="seed">Run seed</label>
+        <input id="seed" autocomplete="off" spellcheck="false" maxlength="9" placeholder="ABCD EFGH" inputmode="text">
+        <p id="seed-status" class="hint">Find it on the pause screen. Every recipe depends on it.</p>
+      </div>
+
+      <details class="opts">
+        <summary>Run options</summary>
+        <div class="opt-grid">
+          <label><input type="checkbox" data-opt="greed"> Greed / Greedier mode</label>
+          <label><input type="checkbox" data-opt="challenge"> Challenge run</label>
+          <label><input type="checkbox" data-opt="keeper"> Playing Keeper / Tainted Keeper</label>
+          <label><input type="checkbox" data-opt="lostBirthright"> The Lost with Birthright</label>
+          <label><input type="checkbox" data-opt="taintedLost"> Tainted Lost (offensive items only)</label>
+          <label><input type="checkbox" data-opt="noTrinket"> Holding the NO! trinket</label>
+        </div>
+        <p class="hint">These remove or reroll items the same way the game does. Tainted Lost and Sacred Orb also have random extra rerolls that no calculator can predict.</p>
+      </details>
+    </section>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-craft" aria-controls="view-craft" aria-selected="true">Craft</button>
+      <button role="tab" id="tab-find" aria-controls="view-find" aria-selected="false">Recipe finder</button>
+      <button role="tab" id="tab-break" aria-controls="view-break" aria-selected="false">Break the game</button>
+    </div>
+
+    <!-- Craft: 8 slots -> one item -->
+    <section id="view-craft" role="tabpanel" aria-labelledby="tab-craft">
+      <div class="craft-grid">
+        <div class="panel bag-panel">
+          <div class="panel-head">
+            <h2>The bag</h2>
+            <button class="ghost" id="clear-bag">Clear</button>
+          </div>
+          <ol class="slots" id="slots" aria-label="Bag contents"></ol>
+          <p class="hint">Tap a pickup to add it. Tap a slot to take it out. Order doesn't matter.</p>
+        </div>
+
+        <div class="panel result" id="result" aria-live="polite">
+          <p class="result-empty">Fill all 8 slots to see the result.</p>
+        </div>
+
+        <div class="panel pal-panel">
+          <h2 class="visually-hidden">Pickups</h2>
+          <div class="palette" id="palette"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Shared by the finder and break tabs -->
+    <section id="holdings" class="panel" hidden>
+        <div class="panel-head">
+          <h2>What you're holding</h2>
+          <div class="btn-row">
+            <button class="ghost" id="have-all">Everything</button>
+            <button class="ghost" id="have-clear">None</button>
+          </div>
+        </div>
+        <p class="hint">Set how many of each pickup you have (or can grab). "Everything" tries all ~30 million bags and takes a few seconds.</p>
+        <div class="have-grid" id="have-grid"></div>
+    </section>
+
+    <!-- Finder: what you hold -> everything you can make -->
+    <section id="view-find" role="tabpanel" aria-labelledby="tab-find" hidden>
+      <div class="panel">
+        <div class="find-row first">
+          <label for="target">Looking for one item? <span class="hint">(optional)</span></label>
+          <input id="target" list="item-list" placeholder="e.g. Sacred Heart" autocomplete="off">
+          <datalist id="item-list"></datalist>
+        </div>
+
+        <div class="find-row find-go">
+          <button class="primary" id="find-go">Find recipes</button>
+          <span id="find-count" class="hint"></span>
+        </div>
+        <div class="progress" id="progress" hidden><div class="bar" id="bar"></div></div>
+      </div>
+
+      <div id="find-results"></div>
+    </section>
+
+    <!-- Break: best crafts now + which pickup to grab next -->
+    <section id="view-break" role="tabpanel" aria-labelledby="tab-break" hidden>
+      <div class="panel">
+        <h2>Break the game</h2>
+        <fieldset class="seg" id="break-mode">
+          <legend class="visually-hidden">What to search</legend>
+          <label><input type="radio" name="break-mode" value="seed" checked> Seed only</label>
+          <label><input type="radio" name="break-mode" value="have"> From what I'm holding</label>
+        </fieldset>
+        <p class="hint" data-mode="seed">Only needs your seed. A seed fixes which bag of 8 makes which item, and nothing you do in the run changes that (rerolling pedestals with a D6 doesn't either). This tries every bag of common-to-rare pickups and finds the <strong>easiest</strong> recipe for each game-breaking item and every quality 4: the one built from the most common pickups.</p>
+        <p class="hint" data-mode="have" hidden>Ranks the strongest items you can craft right now from the pickups above, then checks every pickup you could grab next and shows which one unlocks the most.</p>
+        <p class="hint">Tiers: <span class="tier tier-break">Breaker</span> engines that snowball a run, <span class="tier tier-S">S</span> run-winners, <span class="tier tier-A">A</span> strong picks. The tier list is opinionated.</p>
+        <div class="find-row find-go">
+          <button class="primary" id="break-go">Find the easiest breaks</button>
+          <span id="break-count" class="hint"></span>
+        </div>
+        <div class="progress" id="break-progress" hidden><div class="bar" id="break-bar"></div></div>
+      </div>
+      <div id="break-results"></div>
+    </section>
+
+    <section class="panel about">
+      <h2>How accurate is this?</h2>
+      <p>It runs the game's own crafting algorithm: the same seeded random number generator, item pools, pool weights and quality rules, ported from the reverse-engineered code used by the <a href="https://github.com/wofsauge/External-Item-Descriptions">External Item Descriptions</a> mod, with item data pulled straight from the game files.</p>
+      <ul>
+        <li>Each version has its own link you can bookmark: <a href="?v=repentance-plus">Repentance+ (Switch 2)</a> and <a href="?v=repentance">Repentance (Switch 1)</a>.</li>
+        <li><strong>Repentance+</strong> uses the v1.9.7.15 files (the newest data dump available). Repentance+ came to Switch 2, PS5 and Xbox Series on 19 November 2026 and shares the PC version's content.</li>
+        <li><strong>Repentance</strong> uses the v1.7.9b files. The Switch 1, PS4 and Xbox One versions were patched to 1.7.9b in April 2023, and they don't get Repentance+.</li>
+        <li>The two versions really do craft different things: Repentance+ changed some item qualities and item pools, and turned the 8-bomb recipe into Mr. Mega.</li>
+        <li>It assumes every item is unlocked. If the result needs an unlock you don't have, the bag rerolls, and the result card shows what you'd get instead.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>Fan-made, not affiliated with Edmund McMillen or Nicalis · <a href="https://github.com/FreekingDean/freekingdean.github.io">source</a></p>
+  </footer>
+
+  <script src="craft.js"></script>
+  <script src="data/rep.js"></script>
+  <script src="data/repplus.js"></script>
+  <script src="tiers.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
