@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Tanglecube</title>
+  <meta name="description" content="A 3D puzzle: arrows wind around a cube. Tap one to send it off, but only if nothing is in front of its head.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧊</text></svg>">
+  <style>
+    :root {
+      --bg1: #fdf3e4;
+      --bg2: #f3dcc6;
+      --fg: #1f1d1a;
+      --muted: #6b645a;
+      --panel: rgb(255 255 255 / 0.82);
+      --border: #e8dfd0;
+      --accent: #e4572e;
+      --heart: #e4572e;
+      --ink: #1c1d24;
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg1: #1d1b24;
+        --bg2: #100f14;
+        --fg: #f1ede6;
+        --muted: #a39d93;
+        --panel: rgb(33 31 38 / 0.85);
+        --border: #34313b;
+        --accent: #ff7a50;
+        --heart: #ff7a50;
+        --ink: #1c1d24;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: radial-gradient(ellipse at 50% 35%, var(--bg1), var(--bg2));
+      color: var(--fg);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #stage { position: fixed; inset: 0; touch-action: none; }
+    #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+    .bar {
+      position: fixed; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 12px 16px;
+      pointer-events: none;
+    }
+    .bar > * { pointer-events: auto; }
+    .top { top: 0; padding-top: max(12px, env(safe-area-inset-top)); }
+    .bottom { bottom: 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); justify-content: center; }
+
+    .pill {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 0.95rem;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: inherit;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .title { text-align: center; line-height: 1.15; }
+    .title strong { display: block; font-size: 1rem; }
+    .title span { font-size: 0.8rem; color: var(--muted); }
+    #hearts { letter-spacing: 2px; color: var(--heart); font-size: 1.05rem; }
+    #hearts .lost { opacity: 0.25; }
+
+    button {
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 18px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    button:active { transform: scale(0.96); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+
+    #toast {
+      position: fixed; left: 50%; top: 84px; transform: translateX(-50%);
+      padding: 8px 14px; border-radius: 999px;
+      background: var(--panel); border: 1px solid var(--border);
+      font-size: 0.9rem; opacity: 0; transition: opacity 0.2s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    .skip {
+      position: fixed; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 60px);
+      translate: -50% 0; display: none;
+    }
+    .skip.show { display: block; }
+
+    .overlay {
+      position: fixed; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      padding: 16px;
+      background: rgb(0 0 0 / 0.35);
+      overflow-y: auto;
+    }
+    .overlay .dialog { margin: auto; }
+    .overlay.show { display: flex; }
+    .dialog {
+      width: 100%; max-width: 360px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      text-align: center;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    .dialog h2 { margin: 0 0 6px; font-size: 1.6rem; }
+    .dialog p { margin: 0 0 18px; color: var(--muted); }
+    .dialog .row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .zoom {
+      position: fixed; right: 16px; top: 50%; transform: translateY(-50%);
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .zoom button { width: 44px; height: 44px; padding: 0; font-size: 1.2rem; }
+    @media (max-width: 600px) {
+      .zoom { top: auto; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 56px); transform: none; flex-direction: row; }
+      .zoom button { width: 40px; height: 40px; }
+    }
+    #levelGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 18px; }
+    #levelGrid button { padding: 12px 0; border-radius: 12px; }
+    #levelGrid button:disabled { opacity: 0.35; cursor: default; }
+    #levelGrid button.done { border-color: var(--accent); }
+    #levelGrid button.current { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .custom {
+      display: flex; align-items: center; gap: 10px;
+      margin: 0 0 18px; padding-top: 14px; border-top: 1px solid var(--border);
+      font-size: 0.9rem; text-align: left;
+    }
+    .toggle {
+      display: flex; align-items: center; gap: 10px; text-align: left;
+      margin: 0 0 14px; font-size: 0.9rem; color: var(--muted); cursor: pointer;
+    }
+    .song select {
+      flex: 1; min-width: 0; font: inherit; color: var(--fg);
+      background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px;
+    }
+    .toggle input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+    .custom label { flex: 1; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+    .custom input { width: 100%; accent-color: var(--accent); }
+    .custom output { color: var(--fg); font-weight: 600; }
+    #loading {
+      position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+      font-size: 1rem; color: var(--muted); pointer-events: none;
+    }
+    #loading.show { display: flex; }
+
+    .help { font-size: 0.85rem; color: var(--muted); text-align: left; margin: 0 0 18px; padding-left: 18px; }
+    .help li { margin-bottom: 4px; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+<div id="pr-preview-banner" style="position:sticky;top:0;z-index:2147483647;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center;justify-content:center;padding:8px 16px;background:#1f1d1a;color:#fdf8f0;font:600 14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center"><span>You're looking at a preview of PR #10</span><a href="https://freekingdean.github.io/" style="color:#ff7a50">← Back to the live site</a></div>
+  <div id="stage"></div>
+
+  <div class="bar top">
+    <a class="pill" href="../">← Games</a>
+    <div class="pill title"><strong id="levelName">Tanglecube</strong><span id="remaining"></span></div>
+    <div class="pill" id="hearts" aria-label="Lives"></div>
+  </div>
+
+  <div class="bar bottom">
+    <button id="btnLevels">Levels</button>
+    <button id="btnRestart">Restart</button>
+    <button id="btnHint">Hint</button>
+  </div>
+
+  <div class="zoom">
+    <button id="btnZoomIn" aria-label="Zoom in">+</button>
+    <button id="btnZoomOut" aria-label="Zoom out">−</button>
+    <button id="btnView" aria-label="Reset view">⟲</button>
+    <button id="btnSound" aria-label="Turn sound off">🔊</button>
+    <button id="btnShare" aria-label="Copy a link to this cube" title="Copy a link to this cube">🔗</button>
+  </div>
+
+  <div id="toast"></div>
+  <button id="btnSkip" class="skip">Skip replay</button>
+  <div id="loading"><span class="pill" id="loadingText">Building cube…</span></div>
+
+  <div class="overlay" id="winOverlay">
+    <div class="dialog">
+      <h2>Cleared!</h2>
+      <p id="winText">Nice untangling.</p>
+      <div class="row">
+        <button id="btnWatch">Watch again</button>
+        <button id="btnReplay">Play again</button>
+        <button class="primary" id="btnNext">Next level</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="loseOverlay">
+    <div class="dialog">
+      <h2>Crunch.</h2>
+      <p>Out of hearts. An arrow only gets out if nothing on its face is in front of its head.</p>
+      <div class="row">
+        <button class="primary" id="btnRetry">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="levelsOverlay">
+    <div class="dialog">
+      <h2>Tanglecube</h2>
+      <ul class="help">
+        <li>Tap an arrow to send it off the way its head points.</li>
+        <li>It slides straight along its face, so anything on that face in front of its head blocks it. Bodies can wrap round corners; heads can't.</li>
+        <li>Bonking into another arrow is free, unless you turn on hearts below.</li>
+        <li>Drag to turn the cube, pinch or scroll to zoom in close. Arrows on the back count too.</li>
+      </ul>
+      <div id="levelGrid"></div>
+      <label class="toggle">
+        <input type="checkbox" id="heartsToggle">
+        <span>Hearts: lose one per bonk, run out and the cube restarts</span>
+      </label>
+      <label class="toggle song">
+        <span>Song</span>
+        <select id="songSelect"></select>
+      </label>
+      <div class="custom">
+        <label>Any size cube, all unlocked: <output id="customOut">20×20×20</output>
+          <input type="range" id="customSize" min="3" max="100" value="20">
+        </label>
+        <button id="btnCustom">Play</button>
+      </div>
+      <div class="row"><button class="primary" id="btnCloseLevels">Continue</button></div>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
