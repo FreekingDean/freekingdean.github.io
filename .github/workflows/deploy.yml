@@ -1,8 +1,13 @@
 # Publishes the site to the gh-pages branch.
 #   - Push to main      -> deploys the whole site to the root of gh-pages.
 #   - Pull request      -> deploys a preview to gh-pages/pr-preview/pr-<N>/
-#                          and comments the preview link on the PR.
-#   - PR closed/merged  -> removes that preview.
+#                          (with a "back to the live site" banner) and
+#                          comments the preview link on the PR.
+#   - After a main push -> refresh job rebases every open PR branch onto
+#                          main, pushes it back to the branch, and rebuilds
+#                          each preview (so previews pick up site-wide changes).
+#   - After any of them -> sync job rebuilds the open-PR list on the live
+#                          homepage and deletes previews of closed PRs.
 #
 # One-time setup: Settings -> Pages -> Source: "Deploy from a branch",
 # Branch: gh-pages, folder: / (root).
@@ -41,11 +46,92 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Add preview banner
+        if: github.event.action != 'closed'
+        run: >-
+          python3 .github/scripts/preview_banner.py . "$RUNNER_TEMP/site"
+          "${{ github.event.number }}" "https://freekingdean.github.io/"
       - uses: rossjrw/pr-preview-action@v1
         with:
-          source-dir: .
+          source-dir: ${{ runner.temp }}/site
           preview-branch: gh-pages
           umbrella-dir: pr-preview
           # Repo name casing differs from the owner, so the action can't tell
           # this is a user site; set the base URL explicitly.
           pages-base-url: freekingdean.github.io
+
+  refresh:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+          fetch-depth: 0
+          # Optional: a token with the "workflow" scope in the PR_UPDATE_TOKEN
+          # secret lets it push rebases that pick up workflow changes from
+          # main, and makes those pushes re-run PR checks. github.token works
+          # for everything else.
+          token: ${{ secrets.PR_UPDATE_TOKEN || github.token }}
+      - uses: actions/checkout@v4
+        with:
+          path: pages
+          ref: gh-pages
+          fetch-depth: 0
+      - name: Rebase open PRs and rebuild their previews
+        working-directory: src
+        env:
+          GH_TOKEN: ${{ secrets.PR_UPDATE_TOKEN || github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          .github/scripts/refresh_previews.sh ../pages
+      - name: Commit and push
+        working-directory: pages
+        run: |
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing to update"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Refresh PR previews against main 🔁"
+          for i in 1 2 3; do
+            git push origin HEAD:gh-pages && exit 0
+            git pull --rebase origin gh-pages
+          done
+          exit 1
+
+  sync:
+    needs: [deploy, preview, refresh]
+    # Run after whichever jobs ran (the others are skipped).
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+      - uses: actions/checkout@v4
+        with:
+          path: pages
+          ref: gh-pages
+          fetch-depth: 0
+      - name: List open PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100
+          --json number,title,url,author,updatedAt,isDraft > "$RUNNER_TEMP/prs.json"
+      - name: Update homepage list and prune closed previews
+        run: python3 src/.github/scripts/sync_pages.py pages "$RUNNER_TEMP/prs.json"
+      - name: Commit and push
+        working-directory: pages
+        run: |
+          git add -A
+          if git diff --cached --quiet; then echo "Nothing to update"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync open PR list and previews 🔄"
+          for i in 1 2 3; do
+            git push origin HEAD:gh-pages && exit 0
+            git pull --rebase origin gh-pages
+          done
+          exit 1
