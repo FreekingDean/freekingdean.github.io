@@ -122,9 +122,16 @@
     <section id="view-break" role="tabpanel" aria-labelledby="tab-break" hidden>
       <div class="panel">
         <h2>Break the game</h2>
-        <p class="hint">Ranks the strongest items you can craft right now from the pickups above, then checks every pickup you could grab next and shows which one unlocks the most game-breaking crafts. Tiers: <span class="tier tier-break">Breaker</span> engines that snowball a run, <span class="tier tier-S">S</span> run-winners, <span class="tier tier-A">A</span> strong picks. The tier list is opinionated.</p>
+        <fieldset class="seg" id="break-mode">
+          <legend class="visually-hidden">What to search</legend>
+          <label><input type="radio" name="break-mode" value="seed" checked> Seed only</label>
+          <label><input type="radio" name="break-mode" value="have"> From what I'm holding</label>
+        </fieldset>
+        <p class="hint" data-mode="seed">Only needs your seed. A seed fixes which bag of 8 makes which item, and nothing you do in the run changes that (rerolling pedestals with a D6 doesn't either). This tries every bag of common-to-rare pickups and finds the <strong>easiest</strong> recipe for each game-breaking item and every quality 4: the one built from the most common pickups.</p>
+        <p class="hint" data-mode="have" hidden>Ranks the strongest items you can craft right now from the pickups above, then checks every pickup you could grab next and shows which one unlocks the most.</p>
+        <p class="hint">Tiers: <span class="tier tier-break">Breaker</span> engines that snowball a run, <span class="tier tier-S">S</span> run-winners, <span class="tier tier-A">A</span> strong picks. The tier list is opinionated.</p>
         <div class="find-row find-go">
-          <button class="primary" id="break-go">Find the best crafts</button>
+          <button class="primary" id="break-go">Find the easiest breaks</button>
           <span id="break-count" class="hint"></span>
         </div>
         <div class="progress" id="break-progress" hidden><div class="bar" id="break-bar"></div></div>

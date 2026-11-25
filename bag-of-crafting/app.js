@@ -29,6 +29,7 @@
     seedText: "",
     opts: {},
     bag: [],
+    breakMode: "seed",
     have: new Array(30).fill(0)
   };
 
@@ -39,6 +40,7 @@
       if (s.version === "rep" || s.version === "repplus") state.version = s.version;
       if (typeof s.seedText === "string") state.seedText = s.seedText;
       if (s.opts && typeof s.opts === "object") state.opts = s.opts;
+      if (s.breakMode === "seed" || s.breakMode === "have") state.breakMode = s.breakMode;
       if (Array.isArray(s.bag)) state.bag = s.bag.filter(function (x) { return x >= 1 && x <= 29; }).slice(0, 8);
       if (Array.isArray(s.have) && s.have.length === 30) state.have = s.have.map(function (x) { return Math.max(0, Math.min(8, x | 0)); });
     } catch (e) { /* storage blocked: start fresh */ }
@@ -46,7 +48,7 @@
   function save() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
-        version: state.version, seedText: state.seedText, opts: state.opts, bag: state.bag, have: state.have
+        version: state.version, seedText: state.seedText, opts: state.opts, bag: state.bag, have: state.have, breakMode: state.breakMode
       }));
     } catch (e) { /* ignore */ }
   }
@@ -165,7 +167,7 @@
       $(t[0]).setAttribute("aria-selected", on ? "true" : "false");
       $(t[1]).hidden = !on;
     });
-    $("holdings").hidden = id === "tab-craft";
+    $("holdings").hidden = id === "tab-craft" || (id === "tab-break" && state.breakMode === "seed");
   }
 
   // ---- craft view ----
@@ -318,9 +320,14 @@
     var n = BOC.countBags(state.have);
     $("find-count").textContent = n ? n.toLocaleString() + " possible bag" + (n === 1 ? "" : "s") : "You need at least 8 pickups.";
     $("find-go").disabled = !n;
-    var m = BOC.countBagsOneMore(state.have);
-    $("break-count").textContent = m ? m.toLocaleString() + " bags to try, counting one extra pickup" : "";
-    $("break-go").disabled = !m;
+    if (state.breakMode === "seed") {
+      $("break-count").textContent = BOC.countBags(seedOnlyHave()).toLocaleString() + " bags to try · about 10 seconds";
+      $("break-go").disabled = false;
+    } else {
+      var m = BOC.countBagsOneMore(state.have);
+      $("break-count").textContent = m ? m.toLocaleString() + " bags to try, counting one extra pickup" : "Set what you're holding above.";
+      $("break-go").disabled = !m;
+    }
   }
   function fillItemList() {
     var dl = $("item-list");
@@ -350,7 +357,7 @@
     $("find-results").textContent = "";
     lastFound = null;
     $("break-progress").hidden = true;
-    $("break-go").textContent = "Find the best crafts";
+    $("break-go").textContent = breakLabel();
     $("break-results").textContent = "";
     updateCount();
   }
@@ -466,6 +473,42 @@
   }
 
   // ---- break the game ----
+  // How hard each pickup is to come by, roughly: 1 = everywhere, 12 = rare.
+  // Poop Nuggets only come from Tainted ??? so seed-only mode leaves them out.
+  var EFFORT = [0,
+    1, 3, 5, 8, 8, 6, 3,          // hearts: red soul black eternal gold bone rotten
+    1, 3, 6, 8,                   // penny nickel dime lucky
+    1.5, 8, 6,                    // key, golden key, charged key
+    1.5, 8, 12,                   // bomb, golden bomb, giga bomb
+    3, 5, 10,                     // micro, lil', mega battery
+    2, 2, 5, 5, 6,                // card pill rune dice-shard cracked-key
+    10, 10, 10,                   // golden penny pill battery
+    0                             // poop nugget (excluded)
+  ];
+  function seedOnlyHave() {
+    var h = new Array(30).fill(8);
+    h[0] = 0; h[29] = 0;
+    return h;
+  }
+  function breakLabel() { return state.breakMode === "seed" ? "Find the easiest breaks" : "Find the best crafts"; }
+  function initBreak() {
+    document.querySelectorAll('input[name="break-mode"]').forEach(function (r) {
+      r.checked = r.value === state.breakMode;
+      r.addEventListener("change", function () {
+        state.breakMode = r.value; save();
+        applyBreakMode();
+        clearFinder();
+      });
+    });
+    applyBreakMode();
+  }
+  function applyBreakMode() {
+    document.querySelectorAll("#view-break [data-mode]").forEach(function (p) { p.hidden = p.getAttribute("data-mode") !== state.breakMode; });
+    $("break-go").textContent = breakLabel();
+    if (!$("view-break").hidden) showTab("tab-break");
+    updateCount();
+  }
+
   function runBreak() {
     if (worker) { clearFinder(); return; }
     var res = $("break-results");
@@ -478,6 +521,7 @@
     $("break-progress").hidden = false;
     $("break-bar").style.width = "0%";
     $("break-go").textContent = "Cancel";
+    var seedOnly = state.breakMode === "seed";
     var started = Date.now();
     worker.onerror = function (e) {
       clearFinder();
@@ -486,14 +530,61 @@
     worker.onmessage = function (e) {
       var m = e.data;
       if (m.type === "progress") $("break-bar").style.width = (m.total ? m.done / m.total * 100 : 0) + "%";
+      else if (m.type === "easiest-done") {
+        worker.terminate(); worker = null;
+        $("break-go").textContent = breakLabel();
+        $("break-progress").hidden = true;
+        renderEasiest(m, Date.now() - started);
+      }
       else if (m.type === "break-done") {
         worker.terminate(); worker = null;
-        $("break-go").textContent = "Find the best crafts";
+        $("break-go").textContent = breakLabel();
         $("break-progress").hidden = true;
         renderBreak(m, Date.now() - started);
       }
     };
-    worker.postMessage({ mode: "break", version: state.version, opts: state.opts, seed: state.seed, have: state.have, tiers: TIERS });
+    if (seedOnly) worker.postMessage({ mode: "easiest", version: state.version, opts: state.opts, seed: state.seed, have: seedOnlyHave(), tiers: TIERS, effort: EFFORT });
+    else worker.postMessage({ mode: "break", version: state.version, opts: state.opts, seed: state.seed, have: state.have, tiers: TIERS });
+  }
+
+  function renderEasiest(m, ms) {
+    var res = $("break-results");
+    res.textContent = "";
+    var ids = Object.keys(m.best).map(Number);
+    function effortOf(id) { return m.best[id].recipes[0].q; }
+    function label(id) { return "effort " + (Math.round(effortOf(id) * 10) / 10); }
+    var groups = [
+      { title: "Game breakers", test: function (id) { return tierOf(id) === "break"; } },
+      { title: "S tier: run-winners", test: function (id) { return tierOf(id) === "S"; } },
+      { title: "Every other quality 4", test: function (id) { return !tierOf(id) && item(id) && item(id).q === 4; } },
+      { title: "A tier", test: function (id) { return tierOf(id) === "A"; } }
+    ];
+    // Quick headline: the five easiest S/Breaker/Q4 crafts on this seed.
+    var top = ids.filter(function (id) { return tierOf(id) === "break" || tierOf(id) === "S" || (item(id) && item(id).q === 4); })
+      .sort(function (a, b) { return effortOf(a) - effortOf(b); }).slice(0, 5);
+    if (top.length) {
+      var sec0 = el("section", { class: "br-section" }, [el("h3", { text: "Easiest big wins on this seed" })]);
+      var l0 = el("ul", { class: "fr-list" });
+      top.forEach(function (id, i) { l0.appendChild(itemRow(id, m.best[id], i === 0, label(id))); });
+      sec0.appendChild(l0);
+      res.appendChild(sec0);
+    }
+    groups.forEach(function (g) {
+      var list = ids.filter(g.test).sort(function (a, b) { return effortOf(a) - effortOf(b); });
+      if (!list.length) return;
+      var ul = el("ul", { class: "fr-list" });
+      list.forEach(function (id) { ul.appendChild(itemRow(id, m.best[id], false, label(id))); });
+      res.appendChild(el("details", { class: "br-section br-group" }, [
+        el("summary", {}, [el("h3", { text: g.title + " (" + list.length + ")" })]), ul
+      ]));
+    });
+    var missing = Object.keys(TIERS).map(Number).filter(function (id) {
+      return (TIERS[id] === "break" || TIERS[id] === "S") && !m.best[id] && data().items[id];
+    });
+    if (missing.length) {
+      res.appendChild(el("p", { class: "hint", text: "Not craftable on this seed: " + missing.map(itemName).sort().join(", ") + "." }));
+    }
+    res.appendChild(el("p", { class: "hint", text: "Checked " + m.total.toLocaleString() + " bags in " + (ms / 1000).toFixed(1) + "s. Effort adds up how hard each pickup is to find (a penny or red heart is 1, a Giga Bomb 12), so the lowest number is the easiest bag to build. Each item shows its three easiest recipes." }));
   }
 
   function renderBreak(m, ms) {
@@ -555,5 +646,6 @@
   initTabs();
   initPalette();
   initFinder();
+  initBreak();
   renderCraft();
 })();

@@ -199,3 +199,15 @@ input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .grab-head .cnt { margin-left: auto; color: var(--muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .grab-items { margin: 6px 0 0; font-size: 0.85rem; color: var(--muted); }
 .grab-items b { color: var(--fg); font-weight: 600; }
+
+.seg { border: 0; padding: 4px; margin: 10px 0 4px; display: inline-flex; gap: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; flex-wrap: wrap; }
+.seg label { padding: 6px 14px; border-radius: 999px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--accent); color: #fff; }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.effort { font: 600 0.75rem ui-monospace, Menlo, monospace; color: var(--muted); white-space: nowrap; }
+.br-group > summary { cursor: pointer; list-style: none; }
+.br-group > summary::-webkit-details-marker { display: none; }
+.br-group > summary h3 { display: inline; }
+.br-group > summary::before { content: "▸ "; color: var(--muted); }
+.br-group[open] > summary::before { content: "▾ "; }
